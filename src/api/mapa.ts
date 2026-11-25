@@ -191,7 +191,7 @@ export function detalleEvento(tipo: string, payload: Record<string, unknown> = {
   switch (tipo) {
     case 'tramite_iniciado': return 'Inició el trámite'
     case 'paso_avanzado':
-    case 'tramite_avanzado': return `Avanzó a ${dato('paso') || 'el siguiente paso'}`
+    case 'tramite_avanzado': return dato('paso') ? `Avanzó a ${dato('paso').replace(/_/g, ' ')}` : 'Avanzó al siguiente paso'
     case 'cita_reservada': return 'Reservó su horario'
     case 'cita_confirmada': return 'Cita confirmada'
     case 'cita_reprogramada': return 'Cambió la fecha de la cita'
@@ -202,6 +202,18 @@ export function detalleEvento(tipo: string, payload: Record<string, unknown> = {
     case 'cita_cancelada': return 'Canceló la cita'
     case 'pago_generado': return 'Se generó la referencia de pago'
     case 'pago_confirmado': return 'Pago confirmado'
+    case 'tramite_retomado': return 'Retomó el trámite'
+    case 'tramite_cancelado': return 'Trámite cancelado'
+    case 'tramite_abandonado': return 'Dejó el trámite sin terminar'
+    case 'canal_cambiado': return 'Siguió en otro canal'
+    case 'interaccion_iniciada': return 'Inició contacto'
+    case 'interaccion_finalizada': return 'Terminó el contacto'
+    case 'paciente_creado': return 'Paciente nuevo'
+    case 'otp_enviado': return 'Se envió un código de verificación'
+    case 'identidad_verificada': return 'Identidad verificada'
+    case 'verificacion_fallida': return 'Falló la verificación de identidad'
+    case 'datos_paciente_actualizados': return 'Actualizó sus datos'
+    case 'pago_fallido': return 'El pago no se completó'
     case 'mensaje_recibido': return 'Escribió un mensaje'
     case 'mensaje_enviado': return 'Recibió una respuesta'
     case 'llegada_registrada': return `Llegó a la clínica${dato('turno') ? ` (turno ${dato('turno')})` : ''}`

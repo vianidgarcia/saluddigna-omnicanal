@@ -107,8 +107,21 @@ export const agenda = (clinica: string, fecha: string) => agendaClinica(exigir()
 export const llegada = (cita: string, tipo: TipoDocumento, cumplio: boolean) => registrarLlegada(exigir(), cita, tipo, cumplio)
 export const atendida = (cita: string) => marcarAtendida(exigir(), cita)
 
-/** Tiempo real del panel: cada evento de CUALQUIER paciente (solo supervisor y admin, por RLS). */
-export async function escucharTodo(alEvento: (e: EventoEnVivo) => void): Promise<() => void> {
+/* Supabase reutiliza el canal si ya existe y no deja agregarle oyentes: las altas y bajas van en fila,
+   para que la anterior termine de cerrarse antes de abrir otra (StrictMode monta dos veces). */
+let filaGlobal: Promise<unknown> = Promise.resolve()
+
+/** Tiempo real del panel: cada evento de CUALQUIER paciente (solo supervisor y admin, por RLS). Devuelve cómo dejarlo. */
+export function escucharTodo(alEvento: (e: EventoEnVivo) => void, alEstado: (conectado: boolean) => void): () => void {
   if (!esApi) return () => {}
-  return suscribirJourneyGlobal(exigir(), alEvento)
+  let vivo = true
+  const alta = filaGlobal.then(async () => {
+    if (!vivo) return null
+    return suscribirJourneyGlobal(exigir(), (e) => { if (vivo) alEvento(e) }, (s) => { if (vivo) alEstado(s === 'SUBSCRIBED') })
+  }).catch((e: unknown) => { console.warn('[bandeja] tiempo real', e); if (vivo) alEstado(false); return null })
+  filaGlobal = alta
+  return () => {
+    vivo = false
+    filaGlobal = filaGlobal.then(() => alta).then(async (dejar) => { dejar?.(); await new Promise((r) => setTimeout(r, 300)) }).catch(() => {})
+  }
 }
