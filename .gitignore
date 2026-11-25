@@ -1,0 +1,10 @@
+node_modules/
+dist/
+
+.env.local
+
+# Claves y entornos: nunca se suben. Solo los .env.example (sin valores secretos).
+.env
+.env.*
+!.env.example
+*.log

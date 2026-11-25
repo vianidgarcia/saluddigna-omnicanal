@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Salud Digna · Prototipo omnicanal</title>
+    <meta name="description" content="Prototipo del portal del paciente de Salud Digna: agenda estudios y retoma tus trámites en web, WhatsApp o Call Center. Datos de demostración." />
+    <meta name="theme-color" content="#FFFFFF" />
+    <script>
+      /* tema antes de pintar (evita el destello claro): elección guardada o preferencia del sistema */
+      (function () {
+        var t = null
+        try { t = localStorage.getItem('sd_tema') } catch (e) {}
+        if (t !== 'claro' && t !== 'oscuro') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'oscuro' : 'claro'
+        document.documentElement.setAttribute('data-tema', t)
+      })()
+    </script>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/icons/favicon-64.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Salud Digna" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

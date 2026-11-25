@@ -1,0 +1,24 @@
+{
+  "name": "Salud Digna · Prototipo omnicanal",
+  "short_name": "Salud Digna",
+  "description": "Prototipo del portal del paciente: agenda estudios y retoma tus trámites en web, WhatsApp o Call Center. Datos de demostración.",
+  "lang": "es-MX",
+  "dir": "ltr",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ECF3F9",
+  "theme_color": "#FFFFFF",
+  "categories": ["health", "medical"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Agendar cita", "short_name": "Agendar", "url": "./?accion=agendar", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Mis trámites", "short_name": "Trámites", "url": "./?accion=tramites", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
