@@ -10,3 +10,4 @@ dist/
 # Contraseñas y celulares del equipo: se pasan en privado
 CREDENCIALES*.md
 *.log
+.vercel
