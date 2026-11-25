@@ -53,6 +53,7 @@ src/api/
   mapa.test.ts       `npm run probar`
   catalogo.ts        empareja nombres del portal con los uuid de la base
   orquestador.ts     el enlace del paciente: sesión, OTP, trámite, horario, pago, Realtime
+  citas.ts           funciones de la guía que api.ts aún no trae
   personal.ts        el lado del asesor: login real, bandeja, búsqueda y recorrido
   useOrquestador.ts  el hook que usa App.tsx
 src/components/
@@ -110,18 +111,29 @@ avisa al paciente y el trámite se puede ver pero no cambiar.
    además [`IsraelCarry22/salud-digna-chatbot`](https://github.com/IsraelCarry22/salud-digna-chatbot),
    que conversa mucho mejor pero guarda en su propio `memoria.json`. Para que sea omnicanal de
    verdad, ese bot debería cambiar `store.js` y `agenda.js` por llamadas a las RPC de la API.
-4. **Recepción de clínica.** La base ya tiene el rol `recepcion` con llegada, turno por área e INE
-   en mostrador. El portal no tiene esa pantalla: hoy `recepcion` se trata como asesor.
-5. **Pago.** En modo api la base genera la referencia y la liga, pero `views/Pay.tsx` sigue usando
-   la pasarela simulada del portal. Falta cobrar con la liga de la base y dejar que
-   `pagos-webhook` confirme.
+4. ~~Recepción de clínica.~~ **Resuelto.** `RecepcionClinica` (llegadas, turno, caja, atendida) y
+   `AtencionCitas` (mostrador y teléfono). Falta agendar en mostrador para hoy (`p_inmediato`).
+5. ~~Pago.~~ **Resuelto.** En modo api se paga con `pago-demo` (sin cargo) en `PagoApi` y en
+   `/pagar/:referencia`. Al publicar, Eduardo registra la URL base para que `link_pago` deje de ser `null`.
+   Sin conexión queda la pasarela simulada.
+6. **Cambiar clínica u horario de un trámite ya apartado en la base:** al retomarlo se respeta lo que tenía;
+   para moverlo se usa "Cambiar fecha" en Mis trámites (otra clínica = cancelar y agendar).
+7. **Catálogo:** la base publicada tiene 6 estudios; el portal solo ofrece los que coinciden.
+
+## Llamadas (call center)
+
+El paciente llama desde "¿Necesitas ayuda?", lo atiende la contestadora y la llamada le timbra a un asesor
+disponible en la vista del personal. Interfaz en `src/call-center/`, servidor en `modulos/call-center/`
+(ver su README). Modo local: BroadcastChannel entre pestañas, sin servidor. Modo api: `VITE_CALL_CENTER_URL`;
+si falta, el portal lo avisa y ofrece el teléfono. `src/api/llamadas.ts` son las operaciones del asesor.
 
 ## Dar de alta al personal
 
 En modo api el login usa Supabase Auth, no las credenciales de demostración. Para cada persona:
 crear el usuario en Auth e insertarlo en `core.staff`; un trigger copia su rol al JWT. Los roles de
 la base son `asesor`, `supervisor`, `admin` y `recepcion`; el portal los reduce a dos
-(`asesor` y `admin`) en `aRolPortal`. La bandeja omnicanal necesita rol de supervisor o admin.
+(`asesor` y `admin`) en `aRolPortal`. La bandeja omnicanal (con búsqueda y recorrido) necesita rol
+de supervisor o admin; al asesor no se le muestra.
 
 ## Probar el enlace de punta a punta
 

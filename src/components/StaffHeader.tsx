@@ -1,5 +1,5 @@
 import { useApp } from '../context'
-import { ROL } from '../state/sesion'
+import { rolVisible } from '../state/sesion'
 import { Logo } from './Header'
 import { Icon } from './Icon'
 import { BotonTema } from './Tema'
@@ -20,7 +20,7 @@ export function StaffHeader() {
         <div className="flex items-center gap-2 lg:gap-4">
           <p className="flex items-center gap-2 rounded-full bg-resaltado px-3 py-1 t-meta font-semibold text-titulo">
             <Icon n={sesion.rol === 'admin' ? 'shield' : 'headset'} size={18} className="text-enlace" />
-            <span><span className="sr-only">Rol: </span>{ROL[sesion.rol]}</span>
+            <span><span className="sr-only">Rol: </span>{rolVisible(sesion)}{sesion.clinicaNombre && ` · ${sesion.clinicaNombre}`}</span>
           </p>
           <span className="hidden t-meta text-secundario lg:inline">{sesion.correo}</span>
           <span className="hidden sm:block"><BotonTema /></span>

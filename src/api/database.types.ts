@@ -38,7 +38,7 @@ export type Database = {
 { Args: { "p_interaccion_id": string,"p_resultado"?: string }; Returns: undefined
                            },
 "clinicas_para_estudio":
-{ Args: { "p_ciudad"?: string,"p_estado"?: string,"p_estudio_id": string }; Returns: Json
+{ Args: { "p_busqueda"?: string,"p_ciudad"?: string,"p_estado"?: string,"p_estudio_id": string,"p_lat"?: number,"p_limite"?: number,"p_lng"?: number }; Returns: Json
                            },
 "cola_confirmar":
 { Args: { "p_cola": string,"p_msg_id": number }; Returns: boolean
@@ -48,6 +48,9 @@ export type Database = {
                            },
 "confirmar_pago":
 { Args: { "p_datos"?: Json,"p_estado": string,"p_referencia": string }; Returns: Json
+                           },
+"directorio_clinicas":
+{ Args: { "p_busqueda"?: string,"p_ciudad"?: string,"p_estado"?: string,"p_lat"?: number,"p_limite"?: number,"p_lng"?: number }; Returns: Json
                            },
 "generar_pago":
 { Args: { "p_interaccion_id": string,"p_tramite_id": string,"p_version": number }; Returns: Json
@@ -114,6 +117,9 @@ export type Database = {
                            },
 "tramites_en_curso":
 { Args: { "p_antes_de"?: string,"p_clinica_id"?: string,"p_limite"?: number,"p_paso"?: string }; Returns: Json
+                           },
+"ubicaciones_clinicas":
+{ Args: { "p_estudio_id"?: string }; Returns: Json
                            },
 "validar_otp":
 { Args: { "p_codigo": string,"p_interaccion_id": string }; Returns: Json

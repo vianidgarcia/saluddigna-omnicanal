@@ -8,8 +8,8 @@
  * que el catálogo de la base (core.clinicas / core.estudios) no trae lo mismo que el portal; la
  * solución de fondo es generar el seed de la base desde data/clinicasData.ts.
  */
-import { catalogoEstudios, clinicasParaEstudio, type Cliente, type Clinica, type Estudio } from './api'
-import { emparejarEstudio, normalizar } from './mapa'
+import { catalogoEstudios, clinicasParaEstudio, directorioClinicas, type Cliente, type Clinica, type Estudio } from './api'
+import { emparejarEstudio, normalizar, registrarZonas } from './mapa'
 import { CLINICAS_DATOS } from '../data/clinicasData'
 
 let estudios: Estudio[] | null = null
@@ -35,7 +35,7 @@ export async function listaClinicas(c: Cliente, estudioId: string, ciudad?: stri
   const clave = `${estudioId}|${ciudad ?? ''}|${estado ?? ''}`
   const previo = clinicasPorEstudio.get(clave)
   if (previo) return previo
-  const lista = await clinicasParaEstudio(c, estudioId, ciudad, estado)
+  const lista = await clinicasParaEstudio(c, estudioId, { ciudad, estado })
   clinicasPorEstudio.set(clave, lista)
   return lista
 }
@@ -54,6 +54,13 @@ export async function idClinica(c: Cliente, estudioId: string, nombre: string): 
   if (exacto) return exacto.id
   const parcial = lista.find((x) => normalizar(x.nombre).includes(n) || n.includes(normalizar(x.nombre)))
   return parcial?.id ?? null
+}
+
+let directorio: Promise<Clinica[]> | null = null
+/** Directorio completo (se pide una vez). De paso registra la zona horaria de cada clínica. */
+export function directorioCompleto(c: Cliente): Promise<Clinica[]> {
+  directorio ??= directorioClinicas(c, { limite: 300 }).then((l) => { registrarZonas(l); return l }).catch((e: unknown) => { directorio = null; throw e })
+  return directorio
 }
 
 /** Olvida los catálogos (tras "Reiniciar demo" o un cambio de catálogo en la base). */

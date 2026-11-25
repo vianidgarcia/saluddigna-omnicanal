@@ -28,6 +28,10 @@ export type Tramite = {
   hora: string | null // HH:MM
   /** sin cuenta: el trámite se identifica por su folio (id); nombre y teléfono (10 dígitos) se piden al confirmar */
   paciente: { nombre: string | null; telefono: string | null }
+  /** Modo api: familiar para quien es la cita (sin esto, es para el titular) */
+  beneficiario?: { id: string; nombre: string } | null
+  /** Modo api: aceptó avisos por WhatsApp */
+  avisos?: boolean
   metodoPago: MetodoPago | null
   pago?: Pago | null
   paso: Paso
@@ -223,6 +227,8 @@ export const TIPO_EVENTO: Record<string, string> = {
   'asesor.reagendado': 'Cita reagendada',
   'cita.confirmada': 'Cita confirmada',
   'cita.comprobante_descargado': 'Comprobante descargado',
+  'llamada.atendida': 'Llamada atendida',
+  'llamada.terminada': 'Llamada terminada',
   'nota.interna': 'Nota interna',
 }
 

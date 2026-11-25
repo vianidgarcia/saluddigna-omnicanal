@@ -19,6 +19,14 @@ el enlace completo y lo que falta**; lo imprescindible al tocar código:
   (~66 kB comprimidos) y debe quedar en su trozo diferido. Revisar el tamaño de `index-*.js`.
 - El trámite de `src/state/tramite.ts` sigue siendo la fuente de la interfaz. Toda la escritura
   pasa por `commit` en `App.tsx`: ese es el único punto de enganche con el orquestador.
+- `docs/GUIA_APP_PWA.md` es la guía del backend: las reglas las decide la base, no se reimplementan aquí. Las funciones
+  que `api.ts` aún no trae están en `src/api/citas.ts` (cancelar, reprogramar, pagar, cobrar en caja, marcar atendida).
+- Horas en modo api: la base responde en UTC. Mostrarlas SIEMPRE con `partirFechaHora(iso, zonaDe(clinica))`.
+- Pantallas solo de modo api (todas diferidas, arrastran Supabase): paciente `CitasApi`, `PagoApi`, `DatosApi`; personal
+  `RecepcionClinica`, `AtencionCitas`, `MetricasApi`. `sesion.rolBase` decide qué ve cada cuenta (asesor, recepcion,
+  supervisor, admin); la sesión del personal se cierra a los 30 min sin actividad.
+- Rutas: `/pagar/:referencia` (liga de WhatsApp), `/citas`, `/tramite/:folio`. El hosting debe servir index.html en ellas.
+- Contraseñas y celulares del equipo (`CREDENCIALES*.md`, ignorado por git): nunca en el código ni en la documentación.
 - El modo `local` no debe romperse nunca: es el respaldo si el backend falla en la presentación.
 
 ## Estructura
@@ -71,6 +79,15 @@ el enlace completo y lo que falta**; lo imprescindible al tocar código:
   4111…1111 y 5555…4444 aprobadas, 4000…3220 pide código 123456, 4000…0002 rechazada, 4000…9995 sin fondos.
   Nunca se guarda el número completo ni el CVV (solo marca y últimos 4); los campos tienen autocomplete="off".
   Los eventos del pago usan el canal `pasarela`. Pendiente por definir: liga de pago enviada por el asesor.
+- Llamadas: `src/call-center/` (todo diferido). `LlamadaCliente` lo monta App (sobrevive al cambiar de vista) y
+  `PanelLlamadas` la vista del asesor; `transporteLocal` (pestañas) y WebSocket usan el mismo protocolo
+  (`tipos.ts`, copia de `modulos/call-center/server/src/tipos.ts`: cambiar los dos). `FichaLlamada` y
+  `api/llamadas.ts` solo en modo api. El paciente marca
+  directo a un asesor o a la contestadora (números de ejemplo); al contestar, el servidor le manda un código y él lo
+  confirma en su pantalla (`call:otp`), con lo que la ficha se abre. Lo que lleva en el portal viaja como `borrador`
+  (declarado, sin verificar). `TramiteLlamada` muestra el paso en que se quedó y deja continuarlo o corregirlo.
+  Los códigos OTP nunca los ve el asesor ni se guardan; `TelefonoSimulado` los muestra SOLO al paciente y solo con
+  `haySimulador` (VITE_SIMULADOR y Supabase en localhost).
 - Comprobante en PDF: `state/comprobante.ts` (jsPDF, cargado solo al pulsar el botón; no pesa en el inicio) y
   `components/BotonComprobante` ("Descargar comprobante (PDF)"), solo con la cita confirmada: en la confirmación,
   en Mis trámites y en la ficha del asesor. Incluye folio, nombre, estudio, clínica, fecha y hora, pago (solo marca y

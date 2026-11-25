@@ -9,6 +9,10 @@ import { esApi } from '../api/modo'
 
 /* Diferida: solo el personal en modo api la necesita, así no pesa en el arranque del portal. */
 const BandejaOmnicanal = lazy(() => import('../components/BandejaOmnicanal').then((m) => ({ default: m.BandejaOmnicanal })))
+const AtencionCitas = lazy(() => import('../components/AtencionCitas'))
+const RecepcionClinica = lazy(() => import('../components/RecepcionClinica'))
+const MetricasApi = lazy(() => import('../components/MetricasApi'))
+const PanelLlamadas = lazy(() => import('../call-center/PanelLlamadas'))
 import { CLINICA_INICIAL, findClinic } from '../data/clinics'
 import {
   CANAL, ICONO_CANAL, METODO, PASOS, TIPO_EVENTO, TICK_MS, avance, conEvento, conNota, esNotaInterna,
@@ -42,17 +46,40 @@ export function Asesor() {
   const [abierta, setAbierta] = useState(false)
   useEffect(() => { if (!t) setAbierta(false) }, [t])
 
+  // modo api: cada cuenta ve solo lo suyo. Sesiones guardadas antes de este cambio no traen rolBase.
+  const rolBase = sesion?.rolBase ?? sesion?.rol
+  const callCenter = !esApi || rolBase === 'asesor' || rolBase === 'admin'
+  const recepcion = esApi && (rolBase === 'recepcion' || rolBase === 'admin')
+  const supervision = esApi && (rolBase === 'supervisor' || rolBase === 'admin')
+
   const buscar = () => { setBuscado(q); setAbierta(false) }
   const encontrado = t && buscado !== null && coincide(t, buscado)
 
   return (
     <div className={`${container} py-8 lg:py-12`}>
       <h1 className="t-greeting font-head text-titulo">Atención al paciente</h1>
-      <p className="mt-2 max-w-3xl t-body">Busca al paciente y retoma su trámite con todo lo que ya hizo en web, WhatsApp o Call Center, sin volver a pedirle sus datos.</p>
+      <p className="mt-2 max-w-3xl t-body">{esApi && rolBase === 'recepcion'
+        ? 'Registra las llegadas de hoy, cobra en caja y atiende en mostrador.'
+        : esApi && rolBase === 'asesor'
+        ? 'Contesta la llamada y retoma el trámite del paciente con todo lo que ya hizo en web, WhatsApp o Call Center. La bandeja y la búsqueda son para supervisión y administración.'
+        : 'Busca al paciente y retoma su trámite con todo lo que ya hizo en web, WhatsApp o Call Center, sin volver a pedirle sus datos.'}</p>
 
-      {esApi && (
+      {recepcion && <Suspense fallback={<p role="status" className="mt-8 t-body text-secundario">Cargando recepción…</p>}><RecepcionClinica /></Suspense>}
+
+      {callCenter && <Suspense fallback={<p role="status" className="mt-8 t-body text-secundario">Cargando llamadas…</p>}>
+        <PanelLlamadas alAtender={(e) => {
+          // modo local: si la llamada es del trámite de este navegador, se abre su ficha
+          const folio = e.brief.tramiteFolioSugerido
+          if (!esApi && folio) { setQ(folio); setBuscado(folio); setAbierta(true) }
+        }} />
+        {esApi && <AtencionCitas canal="call_center" clinicaId={null} />}
+      </Suspense>}
+
+      {/* La base solo da bandeja, búsqueda y recorrido a supervisor y admin (42501 para el asesor) */}
+      {supervision && (
         <Suspense fallback={<p role="status" className="mt-8 t-body text-secundario">Cargando la bandeja omnicanal…</p>}>
           <BandejaOmnicanal />
+          <MetricasApi />
         </Suspense>
       )}
 
@@ -90,7 +117,7 @@ export function Asesor() {
       </section>}
 
       {!esApi && t && abierta && <Ficha t={t} />}
-      {sesion?.rol === 'admin' && <PanelAdmin />}
+      {sesion?.rol === 'admin' && rolBase !== 'supervisor' && <PanelAdmin />}
     </div>
   )
 }

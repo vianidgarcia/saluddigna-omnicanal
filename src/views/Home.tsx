@@ -17,7 +17,7 @@ const QUICK = [
 
 function Hero() {
   const { go, toast, startAgendar } = useApp()
-  const quickAct = (t: string) => (t === 'Agendar cita' ? startAgendar() : t === 'Mis resultados' ? go('resultados') : toast())
+  const quickAct = (t: string) => (t === 'Agendar cita' ? startAgendar() : t === 'Mis resultados' ? go('resultados') : t === 'Cambiar cita' ? go('tramites') : toast())
   return (
     <div className="bg-banda pb-10 pt-8 lg:pb-16 lg:pt-12">
       <div className={container}>

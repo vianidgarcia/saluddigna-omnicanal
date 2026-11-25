@@ -4,7 +4,7 @@ import { Icon } from '../components/Icon'
 import { AvisoConexion } from '../components/Pwa'
 import { BotonTema } from '../components/Tema'
 import { container, link, outlineBtn, solidBtn } from '../components/ui'
-import { CREDENCIALES, ROL, entrar, type Rol, type Sesion } from '../state/sesion'
+import { CREDENCIALES, CUENTAS_API, ROL, ROL_BASE, entrar, type Rol, type Sesion } from '../state/sesion'
 import { esApi } from '../api/modo'
 
 const ICONO_ROL: Record<Rol, string> = { asesor: 'headset', admin: 'shield' }
@@ -33,8 +33,8 @@ export function Entrar({ onEntrar, onVolver, rolInicial = 'asesor', motivo }: {
     setOcupado(true); setError(null)
     // el módulo del personal (y con él Supabase) se descarga solo al entrar
     void import('../api/personal').then((p) => p.entrarPersonal(correo.trim(), clave))
-      .then(({ rol: rolReal, rolBase }) => {
-        onEntrar({ rol: rolReal, correo: correo.trim(), nombre: `${ROL[rolReal]} (${rolBase})`, inicio: new Date().toISOString() })
+      .then(({ rol: rolReal, rolBase, clinicaId, clinicaNombre }) => {
+        onEntrar({ rol: rolReal, correo: correo.trim(), nombre: ROL_BASE[rolBase] ?? ROL[rolReal], inicio: new Date().toISOString(), rolBase, clinicaId, clinicaNombre })
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : 'No se pudo entrar. Revisa el correo y la contraseña.')
@@ -65,7 +65,7 @@ export function Entrar({ onEntrar, onVolver, rolInicial = 'asesor', motivo }: {
             <h1 id="entrar-t" className="t-greeting font-head text-titulo">Entrar</h1>
             <p className="mt-2 t-body">Acceso para el personal de Salud Digna. Los pacientes no necesitan cuenta: agendan y retoman su trámite desde el portal.</p>
 
-            <fieldset className="mt-6">
+            {!esApi && <fieldset className="mt-6">
               <legend className="text-base font-semibold text-titulo">Entrar como</legend>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {(['asesor', 'admin'] as Rol[]).map((r) => (
@@ -76,7 +76,7 @@ export function Entrar({ onEntrar, onVolver, rolInicial = 'asesor', motivo }: {
                   </label>
                 ))}
               </div>
-            </fieldset>
+            </fieldset>}
 
             <div className="mt-6">
               <label htmlFor="correo" className="text-base font-semibold text-titulo">Correo</label>
@@ -93,7 +93,7 @@ export function Entrar({ onEntrar, onVolver, rolInicial = 'asesor', motivo }: {
               {error && <p id="entrar-e" role="alert" className="mt-2 flex items-start gap-2 t-body font-semibold text-error"><Icon n="alert" className="mt-0.5" />{error}</p>}
             </div>
             <button onClick={enviar} disabled={ocupado} className={`${solidBtn} mt-6 w-full sm:w-auto`}>
-              {ocupado ? 'Entrando…' : <>Entrar como {ROL[rol].toLowerCase()}<Icon n="arrow" /></>}
+              {ocupado ? 'Entrando…' : <>{esApi ? 'Entrar' : `Entrar como ${ROL[rol].toLowerCase()}`}<Icon n="arrow" /></>}
             </button>
           </section>
 
@@ -105,15 +105,23 @@ export function Entrar({ onEntrar, onVolver, rolInicial = 'asesor', motivo }: {
                 : 'Solo para la demo: no hay cuentas reales.'}
             </p>
             <ul className="mt-4 flex flex-col">
-              {CREDENCIALES.map((c) => (
+              {esApi && CUENTAS_API.map((c) => (
+                <li key={c.correo} className="border-t border-borde py-4 first:border-t-0 first:pt-0">
+                  <p className="flex items-center gap-2 t-sub font-bold text-titulo"><Icon n={ICONO_ROL[c.rol]} className="text-enlace" />{ROL_BASE[c.rolBase]}</p>
+                  <p className="mt-1 t-meta text-cuerpo">{c.descripcion}</p>
+                  <p className="mt-2 t-body font-semibold text-titulo">{c.correo}</p>
+                  <button onClick={() => { setCorreo(c.correo); setError(null); document.getElementById('clave')?.focus() }} className={`${outlineBtn} mt-3`} aria-label={`Usar el correo de ${ROL_BASE[c.rolBase]}`}>Usar este correo</button>
+                </li>
+              ))}
+              {!esApi && CREDENCIALES.map((c) => (
                 <li key={c.rol} className="border-t border-borde py-4 first:border-t-0 first:pt-0">
                   <p className="flex items-center gap-2 t-sub font-bold text-titulo"><Icon n={ICONO_ROL[c.rol]} className="text-enlace" />{ROL[c.rol]}</p>
                   <p className="mt-1 t-meta text-cuerpo">{c.descripcion}</p>
                   <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 t-body">
                     <dt className="text-secundario">Correo</dt><dd className="font-semibold text-titulo">{c.correo}</dd>
-                    {!esApi && <><dt className="text-secundario">Contraseña</dt><dd className="font-semibold text-titulo">{c.clave}</dd></>}
+                    <dt className="text-secundario">Contraseña</dt><dd className="font-semibold text-titulo">{c.clave}</dd>
                   </dl>
-                  {!esApi && <button onClick={() => usar(c)} className={`${outlineBtn} mt-3`} aria-label={`Usar credenciales de ${ROL[c.rol]}`}>Usar estas credenciales</button>}
+                  <button onClick={() => usar(c)} className={`${outlineBtn} mt-3`} aria-label={`Usar credenciales de ${ROL[c.rol]}`}>Usar estas credenciales</button>
                 </li>
               ))}
             </ul>

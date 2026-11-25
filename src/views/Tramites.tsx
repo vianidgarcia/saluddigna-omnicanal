@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { useApp } from '../context'
 import { Back } from '../components/Back'
 import { Icon } from '../components/Icon'
@@ -5,26 +6,34 @@ import { BotonComprobante } from '../components/BotonComprobante'
 import { container, outlineBtn, solidBtn } from '../components/ui'
 import { TOTAL_PASOS, CANAL, clinicaTexto, estadoTexto, fechaLarga, hace, fmtHora } from '../state/tramite'
 
+/* Diferida: solo modo api, arrastra Supabase. */
+const CitasApi = lazy(() => import('../components/CitasApi'))
+
 export function Tramites() {
+  const { enlaceApi } = useApp()
+  return (
+    <div className={`${container} py-8 lg:py-12`}>
+      <Back />
+      <h1 className="mt-4 t-greeting font-head text-titulo">Mis trámites</h1>
+      <TramiteLocal />
+      {(enlaceApi === 'listo' || enlaceApi === 'conectando') && <Suspense fallback={<p role="status" className="mt-8 t-body text-secundario">Cargando tus citas…</p>}><CitasApi /></Suspense>}
+    </div>
+  )
+}
+
+function TramiteLocal() {
   const { tramite: t, continuar, startAgendar } = useApp()
   if (!t) {
     return (
-      <div className={`${container} py-8 lg:py-12`}>
-        <Back />
-        <h1 className="mt-4 t-greeting font-head text-titulo">Mis trámites</h1>
-        <div className="mt-6 max-w-3xl border-t border-borde pt-6">
-          <p className="t-body text-titulo">No tienes trámites en curso.</p>
-          <button onClick={() => startAgendar()} className={`${solidBtn} mt-4`}><Icon n="calendar" />Agendar cita</button>
-        </div>
+      <div className="mt-6 max-w-3xl border-t border-borde pt-6">
+        <p className="t-body text-titulo">No tienes trámites en curso en este dispositivo.</p>
+        <button onClick={() => startAgendar()} className={`${solidBtn} mt-4`}><Icon n="calendar" />Agendar cita</button>
       </div>
     )
   }
   const confirmada = t.estado === 'confirmada'
   const paso = t.estado === 'pago_pendiente' ? TOTAL_PASOS : t.paso
   return (
-    <div className={`${container} py-8 lg:py-12`}>
-      <Back />
-      <h1 className="mt-4 t-greeting font-head text-titulo">Mis trámites</h1>
       <section aria-labelledby="tr-t" className="mt-6 max-w-3xl border-t border-borde pt-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -42,6 +51,5 @@ export function Tramites() {
             : <button onClick={continuar} className={`${solidBtn} shrink-0`}>Continuar trámite<Icon n="arrow" /></button>}
         </div>
       </section>
-    </div>
   )
 }

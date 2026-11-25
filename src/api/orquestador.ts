@@ -17,14 +17,16 @@
  * Nada de este archivo corre en modo local: ahí `cliente()` devuelve null.
  */
 import {
-  ErrorApi, asegurarSesionAnonima, avanzarTramite, cerrarInteraccion, confirmarOtpTelefono,
+  ErrorApi, agregarBeneficiario, asegurarSesionAnonima, avanzarTramite, cerrarInteraccion, confirmarOtpTelefono,
   generarPago, guardarDatosPaciente, horariosDisponibles, iniciarSesionPaciente, iniciarTramite,
-  nuevaSesionAnonima, obtenerContexto, pedirOtpTelefono, reservarCita, retomarTramite, suscribirPaciente,
-  type Cliente, type Contexto, type EventoPaciente, type Horario, type ModoOtp, type Pago,
+  misBeneficiarios, nuevaSesionAnonima, registrarConsentimientoAvisos, obtenerContexto, pedirOtpTelefono, reservarCita, retomarTramite, suscribirPaciente,
+  type Beneficiario, type Cliente, type Contexto, type Relacion, type EventoPaciente, type Horario, type ModoOtp, type Pago,
   type Tramite as TramiteApi,
 } from './api'
 import { cliente } from './cliente'
-import { idClinica, idEstudio, listaEstudios, olvidarCatalogos } from './catalogo'
+import { cancelarCita, pagarDemo, pagosPendientes, rangoHorarios, reprogramarCita, type Cita, type PagoPorPagar } from './citas'
+import { canalPropio } from './modo'
+import { directorioCompleto, idClinica, idEstudio, listaEstudios, olvidarCatalogos } from './catalogo'
 import { aE164, emparejarEstudio, fechaHoraDeHorarios, partirNombre } from './mapa'
 
 // se reexportan para que las vistas no tengan que saber en qué archivo viven
@@ -60,7 +62,7 @@ function guardarContexto(ctx: Contexto): Contexto {
   enlace.pacienteId = ctx.paciente.id
   enlace.faltaRegistro = ctx.sesion.requiere_registro ?? []
   enlace.verificado = ctx.sesion.nivel_verificacion === 'verificada'
-  if (ctx.tramite_activo) enlace.remoto = ctx.tramite_activo
+  enlace.remoto = ctx.tramite_activo
   return ctx
 }
 
@@ -75,7 +77,9 @@ function exigirInteraccion(): string {
 export async function arrancar(): Promise<Contexto> {
   const c = exigirCliente()
   await asegurarSesionAnonima(c)
-  return guardarContexto(await iniciarSesionPaciente(c, 'web'))
+  // zonas horarias de las clínicas: las horas de la base vienen en UTC
+  await directorioCompleto(c).catch(() => {})
+  return guardarContexto(await iniciarSesionPaciente(c, canalPropio()))
 }
 
 /** "Reiniciar demo": otra persona anónima en el mismo navegador. */
@@ -85,7 +89,7 @@ export async function reiniciar(): Promise<Contexto> {
   enlace.remoto = null
   enlace.horarios = []
   await nuevaSesionAnonima(c)
-  return guardarContexto(await iniciarSesionPaciente(c, 'web'))
+  return guardarContexto(await iniciarSesionPaciente(c, canalPropio()))
 }
 
 /** Vuelve a leer el contexto: lo que cambió en otros canales. */
@@ -111,7 +115,7 @@ export async function pedirCodigo(telefono10: string): Promise<ModoOtp> {
 export async function confirmarCodigo(telefono10: string, codigo: string, modo: ModoOtp): Promise<Contexto> {
   const c = exigirCliente()
   await confirmarOtpTelefono(c, aE164(telefono10), codigo, modo)
-  return guardarContexto(await iniciarSesionPaciente(c, 'web'))
+  return guardarContexto(await iniciarSesionPaciente(c, canalPropio()))
 }
 
 export async function guardarNombre(completo: string): Promise<Contexto> {
@@ -151,7 +155,7 @@ function exigirRemoto(): TramiteApi {
  * Crea el trámite en la base con lo que el paciente ya eligió en los pasos 1 a 3.
  * Devuelve el trámite remoto; `estudio` y `clinica` son los NOMBRES que usa el portal.
  */
-export async function crearTramiteCompleto(datos: { estudio: string; clinica: string | null }): Promise<TramiteApi> {
+export async function crearTramiteCompleto(datos: { estudio: string; clinica: string | null; beneficiario?: string | null }): Promise<TramiteApi> {
   const c = exigirCliente()
   const interaccion = exigirInteraccion()
 
@@ -161,7 +165,7 @@ export async function crearTramiteCompleto(datos: { estudio: string; clinica: st
   // el trámite nace ya con su estudio, en el paso "elegir clínica"
   let t: TramiteApi
   try {
-    t = await iniciarTramite(c, interaccion, estudioId)
+    t = await iniciarTramite(c, interaccion, estudioId, datos.beneficiario)
   } catch (e) {
     if (!(e instanceof ErrorApi && e.code === 'PT409' && e.message === 'tramite_duplicado')) throw e
     // Ya hay uno abierto de este estudio (p. ej. un intento anterior que quedó a medias): se RETOMA y se
@@ -199,7 +203,7 @@ function recordarHorarios(clave: string, nuevos: Horario[]) {
 }
 
 /** Horarios reales de la clínica (los del portal son de ejemplo). Guarda la lista para reservar. */
-export async function horarios(clinicaNombre: string, estudioNombre: string, desde?: string, dias = 21): Promise<Horario[]> {
+export async function horarios(clinicaNombre: string, estudioNombre: string, desde?: string, dias = 14): Promise<Horario[]> {
   const c = exigirCliente()
   const estudioId = await idEstudio(c, estudioNombre)
   if (!estudioId) return []
@@ -209,13 +213,6 @@ export async function horarios(clinicaNombre: string, estudioNombre: string, des
   recordarHorarios(`${clinicaId}|${estudioId}`, lista)
   return lista
 }
-
-/** Un día después de 'AAAA-MM-DD' (aritmética de calendario: no depende de la zona horaria). */
-const diaSiguiente = (iso: string) => {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)
-}
-const diasEntre = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000)
 
 /**
  * Horarios libres de 'desde' a 'hasta' (ambos 'AAAA-MM-DD', inclusive).
@@ -228,20 +225,7 @@ export async function horariosRango(clinicaNombre: string, estudioNombre: string
   const estudioId = await idEstudio(c, estudioNombre)
   const clinicaId = estudioId ? await idClinica(c, estudioId, clinicaNombre) : null
   if (!estudioId || !clinicaId) return null
-  const todos = new Map<string, Horario>()
-  let cursor = desde
-  while (cursor <= hasta) {
-    const dias = Math.min(14, diasEntre(cursor, hasta) + 1)
-    const lote = await horariosDisponibles(c, clinicaId, estudioId, cursor, dias)
-    for (const h of lote) todos.set(h.fecha_hora, h)
-    const ultimo = lote.at(-1)?.fecha
-    if (lote.length >= 100 && ultimo && ultimo > cursor) {
-      cursor = ultimo // tramo lleno (tope de 100): se continúa desde el último día recibido
-    } else {
-      for (let i = 0; i < dias; i++) cursor = diaSiguiente(cursor) // se avanza al final de la ventana
-    }
-  }
-  const lista = [...todos.values()].sort((a, b) => a.fecha_hora.localeCompare(b.fecha_hora))
+  const lista = await rangoHorarios(c, clinicaId, estudioId, desde, hasta)
   recordarHorarios(`${clinicaId}|${estudioId}`, lista)
   return lista
 }
@@ -263,6 +247,56 @@ export async function pago(): Promise<Pago> {
   await sincronizar()
   return p
 }
+
+/* ------------------------------------------ citas, pagos y familia (docs/GUIA_APP_PWA.md) ---- */
+
+export const porPagar = (): Promise<PagoPorPagar[]> => pagosPendientes(exigirCliente(), exigirInteraccion())
+
+export async function pagar(referencia: string): Promise<Contexto> {
+  await pagarDemo(exigirCliente(), exigirInteraccion(), referencia)
+  return sincronizar()
+}
+
+export async function cancelar(cita: string, motivo: string): Promise<{ ctx: Contexto; reembolso: boolean }> {
+  const r = await cancelarCita(exigirCliente(), exigirInteraccion(), cita, motivo)
+  return { ctx: await sincronizar(), reembolso: r.reembolso }
+}
+
+/** Horarios para cambiar una cita: los ids ya vienen en ella. */
+export async function horariosDeCita(cita: Cita, desde: string, hasta: string): Promise<Horario[] | null> {
+  if (!cita.clinica_id || !cita.estudio_id) return null
+  return rangoHorarios(exigirCliente(), cita.clinica_id, cita.estudio_id, desde, hasta)
+}
+
+export async function reprogramar(cita: string, fechaHora: string): Promise<Contexto> {
+  await reprogramarCita(exigirCliente(), exigirInteraccion(), cita, fechaHora)
+  return sincronizar()
+}
+
+/** La sesión sigue con uno de los trámites pendientes (pudo empezar en WhatsApp o por teléfono). */
+export async function retomar(tramite: string): Promise<{ ctx: Contexto; tramite: TramiteApi }> {
+  await retomarTramite(exigirCliente(), exigirInteraccion(), tramite)
+  const ctx = await sincronizar()
+  if (!ctx.tramite_activo) throw new Error('Ese trámite ya no está abierto.')
+  return { ctx, tramite: ctx.tramite_activo }
+}
+
+/** Celular de la cuenta con la que está la sesión (10 dígitos), o null si es anónima. */
+export async function telefonoDeSesion(): Promise<string | null> {
+  const { data } = await exigirCliente().auth.getSession()
+  return data.session?.user.phone?.slice(-10) || null
+}
+
+export const familia = (): Promise<Beneficiario[]> => misBeneficiarios(exigirCliente(), exigirInteraccion())
+
+export async function agregarFamiliar(d: { nombre: string; nacimiento: string; relacion: Exclude<Relacion, 'titular'> }): Promise<string> {
+  const r = await agregarBeneficiario(exigirCliente(), exigirInteraccion(), {
+    ...partirNombre(d.nombre), fecha_nacimiento: d.nacimiento, relacion: d.relacion, es_tutor_legal: d.relacion === 'hijo' || d.relacion === 'hija',
+  })
+  return r.beneficiario_id
+}
+
+export const consentirAvisos = () => registrarConsentimientoAvisos(exigirCliente(), exigirInteraccion(), true)
 
 /* -------------------------------------------------------------- tiempo real ---- */
 

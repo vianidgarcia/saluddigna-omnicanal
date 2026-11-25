@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useApp } from '../context'
+import { esApi } from '../api/modo'
 import { Back } from '../components/Back'
 import { Icon } from '../components/Icon'
 import { WA, NB, container, outlineBtn, link, solidBtn } from '../components/ui'
@@ -12,6 +13,9 @@ import {
 /* Paso 4 · Pago: pasarela SIMULADA. Tarjeta (con verificación 3-D Secure), efectivo en tienda y transferencia SPEI.
    No se cobra nada ni se guardan datos de tarjeta: solo marca y últimos 4 dígitos. */
 
+/* Pago del orquestador: solo modo api. Si no hay conexión queda la pasarela simulada. */
+const PagoApi = lazy(() => import('../components/PagoApi'))
+
 const campo = 'h-12 w-full rounded-lg border border-borde bg-superficie px-4 text-base text-titulo transition-colors hover:border-borde-accion aria-[invalid=true]:border-2 aria-[invalid=true]:border-error'
 const monto = (t: Tramite) => t.estudio?.precio
   ? { cantidad: t.estudio.precio, nota: '(IVA incluido)' }
@@ -22,7 +26,13 @@ function ErrorCampo({ id, children }: { id: string; children: ReactNode }) {
 }
 
 export function Pay() {
-  const { tramite: t, update, go, startAgendar } = useApp()
+  const { tramite: t, update, go, startAgendar, enlaceApi, enviandoApi, reenviarApi } = useApp()
+  const [simular, setSimular] = useState(false)
+  const enBase = esApi && enlaceApi !== 'sin_conexion' && !simular
+
+  if (enBase && enviandoApi) {
+    return <div className={`${container} py-8 lg:py-12`}><Back /><h1 className="mt-4 t-greeting font-head text-titulo">Pago de tu cita</h1><p role="status" className="mt-6 t-body text-secundario">Registrando tu cita…</p></div>
+  }
 
   if (!t || t.estado !== 'pago_pendiente' || !t.metodoPago || t.metodoPago === 'en_clinica') {
     return (
@@ -36,7 +46,7 @@ export function Pay() {
   }
 
   const metodo = t.metodoPago
-  const titulo = { en_linea: 'Paga con tarjeta', oxxo: `Paga en${NB}Oxxo`, spei: 'Paga por transferencia' }[metodo]
+  const titulo = enBase ? 'Pago de prueba' : { en_linea: 'Paga con tarjeta', oxxo: `Paga en${NB}Oxxo`, spei: 'Paga por transferencia' }[metodo]
 
   const cambiarMetodo = () => {
     update((x) => conEvento({ ...x, estado: 'en_curso', metodoPago: null, pago: null, paso: TOTAL_PASOS }, 'pago.metodo_cambiado', 'Regresó a elegir otro método de pago'))
@@ -61,14 +71,22 @@ export function Pay() {
         <span className="inline-flex items-center gap-2 rounded-full bg-ambar-fondo px-3 py-1 t-meta font-semibold text-ambar-texto"><span aria-hidden="true" className="size-2 rounded-full bg-ambar" />Pago pendiente</span>
       </div>
       <div role="progressbar" aria-valuemin={0} aria-valuemax={TOTAL_PASOS} aria-valuenow={TOTAL_PASOS} aria-valuetext={`Paso ${TOTAL_PASOS} de ${TOTAL_PASOS}: pago pendiente`} aria-label="Avance del trámite" className="mt-6 h-2 max-w-xl rounded-full bg-resaltado"><div className="h-full rounded-full bg-accion-hover" style={{ width: `${avance(TOTAL_PASOS)}%` }} /></div>
-      <p className="mt-6 flex max-w-3xl items-start gap-2 rounded-lg bg-resaltado px-4 py-3 t-body text-titulo">
+      {enBase && (
+        <>
+          <Suspense fallback={<p role="status" className="mt-8 t-body text-secundario">Cargando el pago…</p>}>
+            <PagoApi folio={t.id} onSimular={() => setSimular(true)} onReintentar={reenviarApi} />
+          </Suspense>
+          <button onClick={cambiarMetodo} className={`${link} mt-4`}>Cambiar método de pago</button>
+        </>
+      )}
+      {!enBase && <><p className="mt-6 flex max-w-3xl items-start gap-2 rounded-lg bg-resaltado px-4 py-3 t-body text-titulo">
         <Icon n="candado" className="mt-0.5 text-icono" />
         <span><strong className="font-bold">Pasarela de pago simulada.</strong> No se hace ningún cobro. No escribas datos reales de tarjeta: usa las tarjetas de prueba.</span>
       </p>
 
       {metodo === 'en_linea' && <PagoTarjeta t={t} onAprobado={aprobar} onCambiarMetodo={cambiarMetodo} />}
       {metodo === 'oxxo' && <PagoTienda t={t} onAprobado={aprobar} onCambiarMetodo={cambiarMetodo} />}
-      {metodo === 'spei' && <PagoSpei t={t} onAprobado={aprobar} onCambiarMetodo={cambiarMetodo} />}
+      {metodo === 'spei' && <PagoSpei t={t} onAprobado={aprobar} onCambiarMetodo={cambiarMetodo} />}</>}
     </div>
   )
 }

@@ -13,7 +13,7 @@
  * Todo lo de este archivo son funciones PURAS: no llaman a la red, así que se pueden probar sin
  * base de datos (node --test src/api/mapa.test.ts).
  */
-import type { Canal as CanalApi, Paso as PasoApi, Tramite as TramiteApi, Horario } from './api'
+import type { CitaProxima, Canal as CanalApi, Paso as PasoApi, Tramite as TramiteApi, Horario } from './api'
 import type { Canal, Estado, Paso, Tramite } from '../state/tramite'
 
 /* ---------------------------------------------------------------- pasos ---- */
@@ -69,10 +69,29 @@ export function estadoDesdeApi(t: TramiteApi): Estado {
 
 /* ----------------------------------------------------------- fecha y hora ---- */
 
-/** 'AAAA-MM-DDTHH:MM…' → ['AAAA-MM-DD', 'HH:MM'] sin crear un Date (no corre la zona horaria). */
-export function partirFechaHora(iso: string): [string, string] {
-  const m = iso.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/)
-  if (m) return [m[1], m[2]]
+/** Zona horaria de cada clínica (la da directorio_clinicas). Sin dato: la del centro del país. */
+export const ZONA_OMISION = 'America/Mexico_City'
+const zonas = new Map<string, string>()
+export const registrarZonas = (lista: { nombre: string; zona_horaria?: string }[]) => {
+  for (const c of lista) if (c.zona_horaria) zonas.set(normalizar(c.nombre), c.zona_horaria)
+}
+export const zonaDe = (clinica: string | null | undefined) => zonas.get(normalizar(clinica ?? '')) ?? ZONA_OMISION
+
+/**
+ * Instante de la base (ISO con zona, normalmente UTC) → ['AAAA-MM-DD', 'HH:MM'] en la zona de la CLÍNICA,
+ * nunca en la del dispositivo. Un texto sin zona ya es hora local de la clínica y se deja igual.
+ */
+export function partirFechaHora(iso: string, zona: string = ZONA_OMISION): [string, string] {
+  const m = iso.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}(?::?\d{2})?)?$/)
+  if (m && !m[3]) return [m[1], m[2]]
+  if (m) {
+    const z = m[3]
+    const desfase = z === 'Z' || z.includes(':') ? z : `${z.slice(0, 3)}:${z.slice(3) || '00'}`
+    const partes = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+      timeZone: zona, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date(`${m[1]}T${m[2]}:00${desfase}`)).map((p) => [p.type, p.value]))
+    return [`${partes.year}-${partes.month}-${partes.day}`, `${partes.hour}:${partes.minute}`]
+  }
   // Con desplazamiento raro o solo fecha: se usa la hora local del navegador como último recurso.
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ['', '']
@@ -114,7 +133,10 @@ export function fechaHoraDeHorarios(horarios: Horario[], fecha: string, hora: st
  * fundirlo pisaría el estudio, la clínica y la fecha de lo que el paciente está armando ahora.
  */
 export function esMismoTramite(local: Tramite, remoto: TramiteApi): boolean {
-  if (local.id === remoto.folio) return true
+  if (local.id === remoto.folio) return true  // el mismo estudio para otra persona es otro trámite
+  const b1 = local.beneficiario?.id ?? null
+  const b2 = remoto.beneficiario && remoto.beneficiario.relacion !== 'titular' ? remoto.beneficiario.id : null
+  if (b1 !== b2) return false
   const a = local.estudio?.nombre
   const b = remoto.estudio?.nombre
   return !!a && !!b && normalizar(a) === normalizar(b)
@@ -126,9 +148,12 @@ export function esMismoTramite(local: Tramite, remoto: TramiteApi): boolean {
  * WhatsApp o por el asesor se ve en el portal sin perder el avance local.
  */
 export function fusionarDesdeApi(local: Tramite, remoto: TramiteApi): Tramite {
-  const estado = estadoDesdeApi(remoto)
+  let estado = estadoDesdeApi(remoto)
+  // pago en clínica: la cita queda apartada sin pago en línea y se cobra en el mostrador
+  if (estado === 'en_curso' && remoto.paso_actual === 'pago' && remoto.contexto?.cita_id
+    && local.estado === 'confirmada' && local.metodoPago === 'en_clinica') estado = 'confirmada'
   const paso = PASO_DESDE_API[remoto.paso_actual] ?? local.paso
-  const [fecha, hora] = remoto.contexto?.fecha_hora ? partirFechaHora(remoto.contexto.fecha_hora) : [local.fecha, local.hora]
+  const [fecha, hora] = remoto.contexto?.fecha_hora ? partirFechaHora(remoto.contexto.fecha_hora, zonaDe(remoto.clinica?.nombre ?? local.clinica)) : [local.fecha, local.hora]
   return {
     ...local,
     // el folio lo manda la base: es el que ve el asesor y el que va en el PDF
@@ -140,10 +165,24 @@ export function fusionarDesdeApi(local: Tramite, remoto: TramiteApi): Tramite {
     hora: hora || null,
     paso,
     estado,
+    metodoPago: estado === 'pago_pendiente' ? local.metodoPago ?? 'en_linea' : local.metodoPago,
     ultimoCanal: canalDesdeApi(remoto.ultimo_canal),
     canalInicio: canalDesdeApi(remoto.canal_origen ?? local.canalInicio),
     ultimaActualizacion: remoto.ultima_actividad_en ?? new Date().toISOString(),
   }
+}
+
+/**
+ * Al pagarse, el trámite se completa y deja de venir en el contexto: lo que queda es su CITA (mismo folio).
+ * Trae al portal que ya está confirmada y, si la movieron, su nueva fecha. null = nada que cambiar.
+ */
+export function confirmarDesdeCita(local: Tramite, cita: Pick<CitaProxima, 'estado' | 'fecha_hora' | 'clinica'> & { pagada?: boolean }): Tramite | null {
+  const apartada = cita.estado === 'reservada' && local.estado === 'confirmada'
+  if (!apartada && cita.estado !== 'confirmada' && cita.estado !== 'en_clinica') return null
+  const [fecha, hora] = partirFechaHora(cita.fecha_hora, zonaDe(cita.clinica ?? local.clinica))
+  const pago = cita.pagada ? { ...(local.pago ?? { intentos: 0 }), estado: 'aprobado' as const } : local.pago
+  if (local.estado === 'confirmada' && local.fecha === fecha && local.hora === hora && pago?.estado === local.pago?.estado) return null
+  return { ...local, estado: 'confirmada', paso: 4, desdeResumen: false, fecha, hora, pago, ultimaActualizacion: new Date().toISOString() }
 }
 
 /** Texto del evento para la línea de tiempo del portal a partir de un evento del orquestador. */
@@ -151,9 +190,15 @@ export function detalleEvento(tipo: string, payload: Record<string, unknown> = {
   const dato = (k: string) => (typeof payload[k] === 'string' ? (payload[k] as string) : '')
   switch (tipo) {
     case 'tramite_iniciado': return 'Inició el trámite'
+    case 'paso_avanzado':
     case 'tramite_avanzado': return `Avanzó a ${dato('paso') || 'el siguiente paso'}`
     case 'cita_reservada': return 'Reservó su horario'
     case 'cita_confirmada': return 'Cita confirmada'
+    case 'cita_reprogramada': return 'Cambió la fecha de la cita'
+    case 'cita_atendida': return 'Estudio realizado'
+    case 'tramite_completado': return 'Trámite completado'
+    case 'atencion_iniciada': return 'Una persona está atendiendo el trámite'
+    case 'atencion_liberada': return 'Terminó la atención del trámite'
     case 'cita_cancelada': return 'Canceló la cita'
     case 'pago_generado': return 'Se generó la referencia de pago'
     case 'pago_confirmado': return 'Pago confirmado'

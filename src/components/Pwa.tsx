@@ -24,7 +24,7 @@ export function AvisoConexion() {
         <div className="border-b border-borde bg-ambar-fondo">
           <p className={`${container} flex items-start gap-2 py-3 t-body text-titulo`}>
             <Icon n="alert" className="mt-0.5 text-ambar-texto" />
-            <span><strong className="font-bold">Sin conexión.</strong> Puedes seguir usando el portal: tus cambios se guardan en este dispositivo. WhatsApp y llamadas necesitan conexión.</span>
+            <span><strong className="font-bold">Sin conexión.</strong> Puedes seguir usando el portal: tus cambios se guardan en este dispositivo. Confirmar, pagar o cambiar citas, WhatsApp y llamadas necesitan conexión.</span>
           </p>
         </div>
       )}

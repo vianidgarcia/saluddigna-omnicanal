@@ -26,3 +26,10 @@ function decidirModo(): Modo {
 
 export const MODO: Modo = decidirModo()
 export const esApi = MODO === 'api'
+
+/** 'app' si corre instalada (PWA), 'web' en el navegador: así lo distingue la base. */
+export const canalPropio = (): 'app' | 'web' =>
+  typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches ? 'app' : 'web'
+
+/** Teléfono y pagos simulados del backend: SOLO con la Supabase de esta computadora, nunca con una publicada. */
+export const haySimulador = esApi && env.VITE_SIMULADOR === 'true' && /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(URL_API)

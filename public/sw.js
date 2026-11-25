@@ -2,7 +2,7 @@
    Estrategias: navegación → red primero (respaldo: index.html en caché);
    archivos propios → caché primero (Vite les pone hash); fuentes de Google → caché y actualización en segundo plano.
    Para forzar que todos reciban una versión nueva, cambia VERSION. */
-const VERSION = 'sd-pwa-v3'
+const VERSION = 'sd-pwa-v4'
 // ignoreVary: algunos servidores responden con `Vary: Origin` y los scripts con crossorigin no coincidirían en la caché
 const MATCH = { ignoreVary: true }
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/favicon-64.png']

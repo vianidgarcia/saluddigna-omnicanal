@@ -3,10 +3,11 @@
 Cada módulo es una pieza con su propio código y sus propias dependencias, que se conecta al
 mismo backend (Supabase, esquema `api`) que el portal. El portal del paciente vive en `src/` y
 **no se mueve**: los módulos nuevos entran aquí, uno por carpeta, sin tocar `src/`.
+Excepción acordada: la interfaz del call center vive en `src/call-center/` (carga diferida); su servidor, aquí.
 
 | Carpeta | Qué es | Estado |
 |---|---|---|
-| `call-center/` | Módulo de call center: agente de recepción por voz y ventana de llamada del asesor | por integrar |
+| `call-center/` | Módulo de call center: contestadora, fila de asesores y señalización de audio | integrado; falta probarlo contra la base real |
 
 ## Reglas para un módulo nuevo
 1. Una carpeta por módulo, con su `README.md` (qué hace, cómo se corre, qué variables necesita).

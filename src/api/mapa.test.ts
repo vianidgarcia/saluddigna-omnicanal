@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import {
   CANAL_DESDE_API, CANAL_HACIA_API, PASO_DESDE_API, PASO_HACIA_API, canalDesdeApi, claveHorario,
   emparejarEstudio, estadoDesdeApi, esMismoTramite, fechaHoraDeHorarios, fusionarDesdeApi, normalizar, partirFechaHora,
-  aE164, partirNombre,
+  aE164, partirNombre, confirmarDesdeCita, registrarZonas, zonaDe,
 } from './mapa.ts'
 import type { Tramite as TramiteApi, Horario } from './api.ts'
 import type { Tramite } from '../state/tramite.ts'
@@ -38,8 +38,14 @@ test('el estado del portal sale del paso y del pago de la base', () => {
   assert.equal(estadoDesdeApi(base({ paso_actual: 'confirmada' })), 'confirmada')
 })
 
-test('partirFechaHora no corre la hora por la zona del navegador', () => {
-  assert.deepEqual(partirFechaHora('2026-11-27T13:30:00+00:00'), ['2026-11-27', '13:30'])
+test('partirFechaHora muestra la hora de la clínica (la base responde en UTC)', () => {
+  assert.deepEqual(partirFechaHora('2026-11-29T15:30:00+00:00'), ['2026-11-29', '09:30'], 'centro por omisión')
+  assert.deepEqual(partirFechaHora('2026-11-29T15:30:00+00:00', 'America/Tijuana'), ['2026-11-29', '07:30'])
+  assert.deepEqual(partirFechaHora('2026-11-30T02:00:00.123456Z', 'America/Mazatlan'), ['2026-11-29', '19:00'], 'cambia de día')
+  assert.deepEqual(partirFechaHora('2026-11-27T13:30:00'), ['2026-11-27', '13:30'], 'sin zona no se mueve')
+  registrarZonas([{ nombre: 'Tijuana Centro', zona_horaria: 'America/Tijuana' }])
+  assert.equal(zonaDe('tijuana centro'), 'America/Tijuana')
+  assert.equal(zonaDe(null), 'America/Mexico_City')
   assert.deepEqual(partirFechaHora('2026-11-27 08:00:00-06'), ['2026-11-27', '08:00'])
   assert.deepEqual(partirFechaHora('no es fecha'), ['', ''])
 })
@@ -112,6 +118,28 @@ test('el teléfono de 10 dígitos del portal se vuelve el que espera Auth', () =
 test('normalizar permite emparejar catálogos escritos distinto', () => {
   assert.equal(normalizar('Mastografía  BILATERAL'), 'mastografia bilateral')
   assert.equal(normalizar(' Culiacán Centro '), 'culiacan centro')
+})
+
+test('la cita pagada confirma el trámite aunque ya no venga en el contexto', () => {
+  const t: Tramite = { ...local, id: 'SD-GMLM', clinica: 'Puebla', estado: 'pago_pendiente', fecha: '2026-11-29', hora: '09:30' }
+  const cita = { estado: 'confirmada', fecha_hora: '2026-11-29T15:00:00+00:00', clinica: 'Puebla', pagada: true }
+  const r = confirmarDesdeCita(t, cita)!
+  assert.equal(r.estado, 'confirmada')
+  assert.equal(r.hora, '09:00', 'toma el horario reprogramado')
+  assert.equal(r.pago?.estado, 'aprobado')
+  assert.equal(confirmarDesdeCita(r, cita), null, 'sin cambios no se vuelve a escribir')
+  assert.equal(confirmarDesdeCita(t, { ...cita, estado: 'reservada', pagada: false }), null, 'sin pagar no se confirma')
+})
+
+test('pago en clínica sigue confirmado aunque la base siga en el paso de pago', () => {
+  const t: Tramite = { ...local, estado: 'confirmada', metodoPago: 'en_clinica' }
+  assert.equal(fusionarDesdeApi(t, base({ paso_actual: 'pago', contexto: { cita_id: 'c' } })).estado, 'confirmada')
+})
+
+test('el mismo estudio para un familiar es otro trámite', () => {
+  const r = base({ estudio: { id: 'e', nombre: 'Mastografía bilateral', preparacion: null }, beneficiario: { id: 'b1', nombre: 'Luz', relacion: 'madre' } })
+  assert.equal(esMismoTramite(local, r), false)
+  assert.equal(esMismoTramite({ ...local, beneficiario: { id: 'b1', nombre: 'Luz' } }, r), true)
 })
 
 test('un trámite viejo de la base no se funde sobre el que el paciente arma ahora', () => {

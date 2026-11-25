@@ -6,7 +6,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ModoOtp } from '../api/api'
 import { Icon } from './Icon'
-import { link, outlineBtn, solidBtn } from './ui'
+import { avisoDe, link, outlineBtn, solidBtn } from './ui'
+import { WA_PRUEBA } from './ui'
 import { fmtTelefono } from '../state/tramite'
 
 type Props = {
@@ -24,16 +25,27 @@ export function VerificarCelular({ telefono, pedirCodigo, confirmarCodigo, onVer
   const [codigo, setCodigo] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const cancelarRef = useRef(onCancelar)
+  cancelarRef.current = onCancelar
   const primero = useRef<HTMLButtonElement>(null)
+  // reenvío cada 60 s y hasta 5 intentos por código: Auth limita los envíos
+  const [espera, setEspera] = useState(0)
+  const [intentos, setIntentos] = useState(0)
+  useEffect(() => {
+    if (espera <= 0) return
+    const id = window.setTimeout(() => setEspera((n) => n - 1), 1000)
+    return () => window.clearTimeout(id)
+  }, [espera])
   const campo = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null
     primero.current?.focus()
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && onCancelar()
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && cancelarRef.current()
     window.addEventListener('keydown', k)
     return () => { window.removeEventListener('keydown', k); prev?.focus?.() }
-  }, [onCancelar])
+    // solo al abrir y cerrar: onCancelar cambia en cada dibujo y el foco no debe saltar
+  }, [])
 
   useEffect(() => { if (fase === 'codigo') campo.current?.focus() }, [fase])
 
@@ -41,9 +53,9 @@ export function VerificarCelular({ telefono, pedirCodigo, confirmarCodigo, onVer
     setOcupado(true); setError(null)
     try {
       setModo(await pedirCodigo(telefono))
-      setFase('codigo')
+      setFase('codigo'); setCodigo(''); setEspera(60); setIntentos(0)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo enviar el código. Inténtalo de nuevo.')
+      setError(/rate limit|security purposes/i.test(avisoDe(e)) ? 'Pediste varios códigos seguidos. Espera un minuto e inténtalo de nuevo.' : avisoDe(e))
     } finally {
       setOcupado(false)
     }
@@ -55,7 +67,9 @@ export function VerificarCelular({ telefono, pedirCodigo, confirmarCodigo, onVer
       await confirmarCodigo(telefono, codigo, modo)
       onVerificado()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'El código no coincide. Revísalo o pide uno nuevo.')
+      const n = intentos + 1
+      setIntentos(n)
+      setError(n >= 5 ? 'Demasiados intentos con este código. Pide uno nuevo.' : /expired|invalid/i.test(avisoDe(e)) ? 'El código no coincide o ya venció. Revísalo o pide uno nuevo.' : avisoDe(e))
       setCodigo('')
       campo.current?.focus()
     } finally {
@@ -80,7 +94,7 @@ export function VerificarCelular({ telefono, pedirCodigo, confirmarCodigo, onVer
           {fase === 'pedir' ? (
             <>
               <p className="t-body">
-                Te enviaremos un código al <strong className="font-bold text-titulo">{fmtTelefono(telefono)}</strong> para
+                Te enviaremos un código por WhatsApp al <strong className="font-bold text-titulo">{fmtTelefono(telefono)}</strong> para
                 que tu cita quede ligada a ti en todos los canales: si luego escribes por WhatsApp o llamas al Call
                 Center, no tendrás que volver a dar tus datos.
               </p>
@@ -100,19 +114,19 @@ export function VerificarCelular({ telefono, pedirCodigo, confirmarCodigo, onVer
               <input id="otp" ref={campo} value={codigo} inputMode="numeric" autoComplete="one-time-code" maxLength={6}
                 aria-describedby={error ? 'otp-e' : undefined} aria-invalid={!!error || undefined}
                 onChange={(e) => setCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                onKeyDown={(e) => { if (e.key === 'Enter' && codigo.length === 6 && !ocupado) void validar() }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && codigo.length === 6 && !ocupado && intentos < 5) void validar() }}
                 className={`mt-2 min-h-12 w-full rounded-lg border bg-superficie px-4 text-lg tracking-[0.3em] text-titulo ${error ? 'border-error' : 'border-borde'}`} />
-              <button onClick={validar} disabled={ocupado || codigo.length < 6} className={`${solidBtn} mt-4 w-full`}>
+              <button onClick={validar} disabled={ocupado || codigo.length < 6 || intentos >= 5} className={`${solidBtn} mt-4 w-full`}>
                 {ocupado ? 'Confirmando…' : 'Confirmar'}
               </button>
-              <button onClick={() => { setFase('pedir'); setCodigo(''); setError(null) }} className={`${outlineBtn} mt-2 w-full`}>
-                Pedir otro código
+              <button onClick={enviar} disabled={ocupado || espera > 0} className={`${outlineBtn} mt-2 w-full disabled:cursor-not-allowed disabled:border-borde disabled:bg-banda disabled:text-cuerpo`}>
+                {espera > 0 ? `Pedir otro código en ${espera} s` : 'Pedir otro código'}
               </button>
             </>
           )}
 
           {error && <p id="otp-e" role="status" className="mt-3 t-meta text-error">{error}</p>}
-          <p className="mt-4 t-meta text-secundario">Prototipo: con los números de prueba el código es 123456.</p>
+          <p className="mt-4 t-meta text-secundario">¿No te llega? Escribe “hola” por WhatsApp al <a href={WA_PRUEBA} target="_blank" rel="noopener" className="text-enlace underline underline-offset-4">+1 555 138 0373</a> y pide otro. Prototipo: WhatsApp solo llega a los celulares registrados del equipo; con los números de prueba (866 123 4567 a 4571) el código es 123456.</p>
         </div>
       </div>
     </div>

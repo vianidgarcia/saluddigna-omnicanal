@@ -7,4 +7,6 @@ dist/
 .env
 .env.*
 !.env.example
+# Contraseñas y celulares del equipo: se pasan en privado
+CREDENCIALES*.md
 *.log

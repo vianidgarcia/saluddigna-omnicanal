@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useApp } from '../context'
 import { Back } from '../components/Back'
 import { SelectorHorario } from '../components/SelectorHorario'
@@ -12,6 +12,9 @@ import { NB, WA, container, chip, link, outlineBtn, solidBtn } from '../componen
 import {
   LISTA_PASOS, METODO, PASOS, TOTAL_PASOS, avance, conEvento, fmtTelefono, fechaLarga, pasoCompleto, yaPaso,
   type MetodoPago, type Paso, type Tramite, fmtHora } from '../state/tramite'
+
+/* Diferida: solo modo api (familiares y avisos). */
+const DatosApi = lazy(() => import('../components/DatosApi'))
 
 const PREGUNTA: Record<Paso, string> = {
   1: '¿Qué estudio necesitas?',
@@ -31,7 +34,9 @@ export function Agendar() {
 
 /* ---------- contenedor del flujo ---------- */
 function Flujo({ t }: { t: Tramite }) {
-  const { update, go } = useApp()
+  const { update, go, contextoApi, enlaceApi } = useApp()
+  // "el personal manda": mientras lo atiende una persona, aquí se ve pero no se cambia (PT423)
+  const atendido = contextoApi?.tramites_abiertos.find((x) => x.folio === t.id && x.en_atencion_de_otro)
   const paso = t.paso
   const headRef = useRef<HTMLHeadingElement>(null)
   const mounted = useRef(false)
@@ -76,6 +81,8 @@ function Flujo({ t }: { t: Tramite }) {
           : !t.metodoPago ? 'Elige cómo quieres pagar para continuar.' : null
   }
 
+  if (atendido) falta = `Te está atendiendo una persona${atendido.atencion_canal === 'clinica' ? ' en la clínica' : ' del Call Center'}: por ahora este trámite no se puede cambiar desde aquí.`
+
   // pago en clínica: se confirma al momento; los demás pasan por la pasarela simulada (vista Pago)
   const INICIO_PAGO: Partial<Record<MetodoPago, [string, string]>> = {
     en_linea: ['pago.iniciado', 'Inició el pago con tarjeta en la pasarela (simulada)'],
@@ -96,7 +103,7 @@ function Flujo({ t }: { t: Tramite }) {
     en_linea: 'Continuar al pago con tarjeta', oxxo: 'Generar referencia de pago', spei: 'Generar datos de transferencia', en_clinica: 'Confirmar cita',
   }
   const primario = paso === TOTAL_PASOS
-    ? (t.metodoPago ? PRIMARIO[t.metodoPago] : 'Confirmar cita')
+    ? (t.metodoPago === 'en_linea' && enlaceApi === 'listo' ? 'Continuar al pago' : t.metodoPago ? PRIMARIO[t.metodoPago] : 'Confirmar cita')
     : t.desdeResumen ? 'Guardar y continuar' : 'Continuar'
 
   return (
@@ -300,13 +307,14 @@ const OPCIONES: [MetodoPago, string, string][] = [
 ]
 
 function Resumen({ t, onCambiar }: { t: Tramite; onCambiar?: (p: Paso) => void }) {
+  const { enlaceApi } = useApp()
   const c = findClinic(t.clinica)
   const filas: [Paso, string, ReactNode][] = [
     [1, 'Estudio', <>{t.estudio?.nombre}<span className="block t-meta font-normal text-secundario">{t.estudio?.precio ? `${t.estudio.precio} IVA incluido` : 'Precio según tu clínica'}</span></>],
     [2, 'Clínica', c
       ? <>{c.name}<span className="block t-meta font-normal text-secundario">{c.address} · Tel.{NB}{c.phone}</span></>
       : <span className="inline-flex items-center gap-2 rounded-full bg-ambar-fondo px-3 py-1 t-meta font-semibold text-ambar-texto"><span aria-hidden="true" className="size-2 rounded-full bg-ambar" />Clínica pendiente</span>],
-    [3, 'Fecha y hora', t.fecha ? <span className="first-letter:uppercase">{fechaLarga(t.fecha)} · {fmtHora(t.hora)}<span className="block t-meta font-normal text-secundario">Horario de demostración</span></span> : '—'],
+    [3, 'Fecha y hora', t.fecha ? <span className="first-letter:uppercase">{fechaLarga(t.fecha)} · {fmtHora(t.hora)}<span className="block t-meta font-normal text-secundario">{enlaceApi === 'listo' ? 'Hora de la clínica' : 'Horario de demostración'}</span></span> : '—'],
   ]
   return (
     <dl className="divide-y divide-borde">
@@ -342,7 +350,10 @@ function CampoTelefono({ valor, onCambio }: { valor: string | null; onCambio: (t
 }
 
 function PasoPago({ t, onCambiar }: { t: Tramite; onCambiar: (p: Paso) => void }) {
-  const { update } = useApp()
+  const { update, enlaceApi } = useApp()
+  // conectado a la base solo hay pago de prueba en línea o en caja (docs/GUIA_APP_PWA.md, 3.7)
+  const enBase = enlaceApi === 'listo'
+  const opciones = enBase ? OPCIONES.filter(([m]) => m === 'en_linea' || m === 'en_clinica') : OPCIONES
   return (
     <>
       <fieldset className="mb-8">
@@ -357,6 +368,7 @@ function PasoPago({ t, onCambiar }: { t: Tramite; onCambiar: (p: Paso) => void }
           </div>
           <CampoTelefono valor={t.paciente.telefono} onCambio={(tel) => update((x) => ({ ...x, paciente: { ...x.paciente, telefono: tel } }))} />
         </div>
+        {enBase && <Suspense fallback={null}><DatosApi t={t} /></Suspense>}
       </fieldset>
       <section aria-labelledby="res-t" className="rounded-2xl border border-borde bg-superficie p-6">
         <h3 id="res-t" className="t-sub font-bold text-titulo">Resumen de tu cita</h3>
@@ -365,12 +377,12 @@ function PasoPago({ t, onCambiar }: { t: Tramite; onCambiar: (p: Paso) => void }
       <fieldset className="mt-8">
         <legend className="text-base font-semibold text-titulo">¿Cómo quieres pagar?</legend>
         <div className="mt-2 flex flex-col gap-2">
-          {OPCIONES.map(([m, ic, d]) => (
+          {opciones.map(([m, ic, d]) => (
             <label key={m} className={`${optionRow} border-borde hover:border-borde-accion`}>
               <input type="radio" name="pago" className={radio} checked={t.metodoPago === m}
                 onChange={() => update((x) => ({ ...x, metodoPago: m }))} />
               <Icon n={ic} className="mt-0.5 text-icono" />
-              <span><span className="block text-base font-semibold text-titulo">{METODO[m]}</span><span className="block t-meta text-secundario">{d}</span></span>
+              <span><span className="block text-base font-semibold text-titulo">{enBase && m === 'en_linea' ? 'Pago en línea (de prueba)' : METODO[m]}</span><span className="block t-meta text-secundario">{enBase && m === 'en_linea' ? 'Pago de prueba del sistema de citas: no se hace ningún cargo.' : d}</span></span>
             </label>
           ))}
         </div>

@@ -287,9 +287,18 @@ export interface Estudio {
   preparacion: string | null; duracion_min: number; precio_base: number
 }
 export interface Clinica {
-  id: string; clave: string; nombre: string; ciudad: string; estado: string; direccion: string | null
-  zona_horaria: string; precio: number
+  id: string; clave: string; nombre: string; ciudad: string; estado: string; direccion?: string
+  zona_horaria: string
+  /** Solo en clinicas_para_estudio */
+  precio: number
+  id_externo?: number; slug?: string; telefono?: string; lat?: number; lng?: number
+  /** Horario como se publica ("Lunes a Viernes: 6:00 am a 7:00 pm · …") */
+  horario?: string
+  /** Solo si se mandó lat/lng */
+  distancia_km?: number
 }
+export interface Ubicacion { estado: string; clinicas: number; ciudades: { ciudad: string; clinicas: number }[] }
+export type FiltroClinicas = { ciudad?: string; estado?: string; busqueda?: string; lat?: number; lng?: number; limite?: number }
 export interface Horario { fecha_hora: string; fecha: string; hora: string; disponibles: number }
 export interface Beneficiario {
   id: string; nombre: string; relacion: Relacion
@@ -468,8 +477,22 @@ export const cerrarInteraccion = (c: Cliente, interaccion: string, resultado = '
 export const catalogoEstudios = (c: Cliente, busqueda?: string, categoria?: string) =>
   llamar<'catalogo_estudios', Estudio[]>(c, 'catalogo_estudios', { p_busqueda: busqueda || undefined, p_categoria: categoria || undefined })
 
-export const clinicasParaEstudio = (c: Cliente, estudio: string, ciudad?: string, estado?: string) =>
-  llamar<'clinicas_para_estudio', Clinica[]>(c, 'clinicas_para_estudio', { p_estudio_id: estudio, p_ciudad: ciudad, p_estado: estado })
+const argsFiltro = (f: FiltroClinicas) => ({
+  p_ciudad: f.ciudad || undefined, p_estado: f.estado || undefined, p_busqueda: f.busqueda || undefined,
+  p_lat: f.lat, p_lng: f.lng, p_limite: f.limite,
+})
+
+/** Clínicas que hacen el estudio, con su precio. Sin filtros: las primeras 50 por ciudad. */
+export const clinicasParaEstudio = (c: Cliente, estudio: string, filtro: FiltroClinicas = {}) =>
+  llamar<'clinicas_para_estudio', Clinica[]>(c, 'clinicas_para_estudio', { p_estudio_id: estudio, ...argsFiltro(filtro) })
+
+/** Todas las clínicas activas (hasta 300), con teléfono, coordenadas y horario */
+export const directorioClinicas = (c: Cliente, filtro: FiltroClinicas = {}) =>
+  llamar<'directorio_clinicas', Clinica[]>(c, 'directorio_clinicas', argsFiltro(filtro))
+
+/** Estados y ciudades con clínica (que hagan el estudio, si se indica) */
+export const ubicacionesClinicas = (c: Cliente, estudio?: string) =>
+  llamar<'ubicaciones_clinicas', Ubicacion[]>(c, 'ubicaciones_clinicas', { p_estudio_id: estudio })
 
 /** inmediato: en mostrador (personal de la clínica) incluye el horario en curso; si no, 1 h de anticipación */
 export const horariosDisponibles = (c: Cliente, clinica: string, estudio: string, desde?: string, dias?: number, inmediato = false) =>

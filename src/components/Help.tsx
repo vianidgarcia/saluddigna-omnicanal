@@ -1,7 +1,9 @@
+import { useApp } from '../context'
 import { Icon } from './Icon'
 import { WA, NB, container, outlineBtn, link } from './ui'
 
 export function Help() {
+  const { llamar } = useApp()
   return (
     <div id="ayuda" className="mt-10 scroll-mt-24 bg-banda py-10 lg:mt-16 lg:py-12">
       <section aria-labelledby="ayuda-t" className={`${container} flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between`}>
@@ -11,6 +13,7 @@ export function Help() {
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-6">
           <a href={WA} target="_blank" rel="noopener" className={outlineBtn}><Icon n="chat" />Escribir por WhatsApp</a>
+          <button onClick={llamar} className={outlineBtn}><Icon n="phone" />Llamar desde aquí</button>
           <a href="tel:+525555547166" className={`${link} justify-center`}><Icon n="phone" />Llamar 55{NB}5554{NB}7166</a>
         </div>
       </section>

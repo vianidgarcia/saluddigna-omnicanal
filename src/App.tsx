@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Ctx, type AppCtx, type EstudioElegido, type View } from './context'
 import { CLINICA_INICIAL } from './data/clinics'
+import { Back } from './components/Back'
 import { Header } from './components/Header'
 import { Cookies } from './components/Cookies'
 import { Footer } from './components/Footer'
@@ -17,10 +18,16 @@ import { StaffHeader } from './components/StaffHeader'
 import { AvisoConexion, BotonInstalar } from './components/Pwa'
 import { BotonTema } from './components/Tema'
 import { loadSesion, saveSesion, type Rol, type Sesion } from './state/sesion'
-import { loadTramiteAlAbrir, METODO, PASOS, STORAGE_KEY, conEvento, loadTramite, nuevoTramite, saveTramite, type Tramite } from './state/tramite'
+import { CANAL, loadTramiteAlAbrir, METODO, PASOS, STORAGE_KEY, conEvento, loadTramite, nuevoTramite, saveTramite, type Tramite } from './state/tramite'
 import { esApi } from './api/modo'
 import { useOrquestador } from './api/useOrquestador'
+import { fusionarDesdeApi } from './api/mapa'
+import { container } from './components/ui'
 import { VerificarCelular } from './components/VerificarCelular'
+
+/* Diferida: solo se descarga si el paciente llama. */
+const PagoApi = lazy(() => import('./components/PagoApi'))
+const LlamadaCliente = lazy(() => import('./call-center/LlamadaCliente'))
 
 const VIEW_KEY = 'sd_vista'
 const COOKIES_KEY = 'sd_cookies'
@@ -62,6 +69,7 @@ export default function App() {
   const [view, setView] = useState<View>(() => loadView(tramite))
   const [clinic, setClinic] = useState(CLINICA_INICIAL)
   const [sheet, setSheet] = useState(false)
+  const [llamada, setLlamada] = useState(false)
   const [cookies, setCookies] = useState(() => { try { return !window.localStorage.getItem(COOKIES_KEY) } catch { return true } })
   const cerrarCookies = (eleccion: string) => {
     setCookies(false)
@@ -93,7 +101,9 @@ export default function App() {
   // lo que llega de otro canal ya viene fusionado: se guarda sin volver a empujarlo a la base
   const orq = useOrquestador(tRef, guardar)
   // trámite esperando a que el paciente confirme su celular (solo modo api)
-  const [porVerificar, setPorVerificar] = useState<{ t: Tramite; telefono: string } | null>(null)
+  const [porVerificar, setPorVerificar] = useState<{ t: Tramite | null; telefono: string } | null>(null)
+  // referencia de la liga de pago (/pagar/:referencia) que llega por WhatsApp
+  const [refPago, setRefPago] = useState('')
 
   /** Manda a la base el trámite ya confirmado por el paciente. */
   const empujar = (t: Tramite) => {
@@ -108,6 +118,21 @@ export default function App() {
     if (!esApi || !t) return
     const cerrado = t.estado === 'confirmada' || t.estado === 'pago_pendiente'
     if (cerrado && antes?.estado !== t.estado) empujar(t)
+  }
+  const retomarApi = async (id: string) => {
+    const m = await import('./api/orquestador')
+    const { ctx: c, tramite: remoto } = await m.retomar(id)
+    const b = remoto.beneficiario
+    const t: Tramite = {
+      ...nuevoTramite('web'), id: remoto.folio,
+      paciente: { nombre: c.paciente.nombre ?? null, telefono: await m.telefonoDeSesion() },
+      beneficiario: b && b.relacion !== 'titular' ? { id: b.id, nombre: b.nombre ?? 'Familiar' } : null,
+    }
+    const f = fusionarDesdeApi(t, remoto)
+    const listo = conEvento(f, 'tramite.retomado', `Continuó el folio ${f.id}, iniciado en ${CANAL[f.canalInicio]}`)
+    orq.aplicar(c)
+    guardar(listo)
+    go(listo.estado === 'pago_pendiente' ? 'pay' : 'agendar')
   }
   const update = (fn: (t: Tramite) => Tramite) => { if (tRef.current) commit(fn(tRef.current)) }
 
@@ -156,7 +181,7 @@ export default function App() {
   }
 
   const entrarComo = (s: Sesion) => {
-    saveSesion(s); setSesion(s); setEntrar(null)
+    saveSesion(s); setSesion(s); setEntrar(null); setLlamada(false)
     setView('home'); window.scrollTo(0, 0)
   }
   const salir = () => {
@@ -167,11 +192,34 @@ export default function App() {
     window.scrollTo(0, 0)
   }
 
+  // modo api: la sesión del personal se cierra tras 30 minutos sin actividad
+  const salirRef = useRef(salir)
+  salirRef.current = salir
+  useEffect(() => {
+    if (!esApi || !sesion) return
+    let ultima = Date.now()
+    const tocar = () => { ultima = Date.now() }
+    const eventos = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const
+    eventos.forEach((e) => window.addEventListener(e, tocar, { passive: true }))
+    // por reloj, no por temporizador: una pestaña dormida se cierra al despertar
+    const revisar = window.setInterval(() => {
+      if (Date.now() - ultima >= 30 * 60_000) { salirRef.current(); toast('Cerramos la sesión por 30 minutos sin actividad') }
+    }, 15_000)
+    return () => { window.clearInterval(revisar); eventos.forEach((e) => window.removeEventListener(e, tocar)) }
+  }, [sesion])
+
   // accesos directos de la app instalada (manifest → shortcuts): ?accion=agendar | tramites
   const accionInicial = useRef(true)
   useEffect(() => {
     if (!accionInicial.current) return
     accionInicial.current = false
+    // rutas: /pagar/:referencia (liga de pago), /citas y /tramite/:folio
+    const ruta = window.location.pathname.match(/\/(pagar|tramite|citas)(?:\/([^/]+))?\/?$/)
+    if (ruta) {
+      window.history.replaceState(null, '', import.meta.env.BASE_URL)
+      if (ruta[1] === 'pagar' && ruta[2]) { try { setRefPago(decodeURIComponent(ruta[2])) } catch { setRefPago(ruta[2]) } go('liga') } else go('tramites')
+      return
+    }
     const accion = new URLSearchParams(window.location.search).get('accion')
     if (!accion) return
     window.history.replaceState(null, '', window.location.pathname)
@@ -179,7 +227,10 @@ export default function App() {
     else if (accion === 'tramites') go('tramites')
   })
 
-  const ctx: AppCtx = { go, toast, openClinics: () => setSheet(true), scrollToId, tramite, update, startAgendar, continuar, simularWhatsApp, reiniciarDemo, sesion, salir, abrirEntrar, horariosClinica: esApi ? orq.horariosRango : undefined, estudiosDisponibles: orq.estudiosDisponibles }
+  const ctx: AppCtx = { go, toast, openClinics: () => setSheet(true), scrollToId, tramite, update, startAgendar, continuar, simularWhatsApp, llamar: () => { setLlamada(true); window.scrollTo(0, 0) }, reiniciarDemo, sesion, salir, abrirEntrar, horariosClinica: esApi ? orq.horariosRango : undefined, estudiosDisponibles: orq.estudiosDisponibles,
+    contextoApi: orq.contexto, aplicarApi: orq.aplicar, enlaceApi: orq.estado, enviandoApi: orq.enviando,
+    verificarCelular: (telefono) => setPorVerificar({ t: null, telefono }),
+    reenviarApi: () => { if (tRef.current) empujar(tRef.current) }, retomarApi }
   const toastEl = (
     <div role="status" aria-live="polite" className="pointer-events-none fixed bottom-24 left-1/2 z-[60] -translate-x-1/2 lg:bottom-8">
       {toastMsg && <div className="rounded-lg bg-[#1F2933] px-5 py-3 text-base text-white shadow-lg">{toastMsg}</div>}
@@ -213,10 +264,20 @@ export default function App() {
         <a href="#contenido" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-lg focus:bg-superficie focus:px-4 focus:py-3 focus:font-semibold focus:text-enlace focus:shadow-lg">Saltar al contenido</a>
         <Header clinic={clinic} onChange={() => setSheet(true)} onHome={() => go('home')} />
         <AvisoConexion />
+        {llamada && <Suspense fallback={<p role="status" className="bg-banda p-4 text-center t-body">Abriendo la llamada…</p>}><LlamadaCliente onCerrar={() => setLlamada(false)} /></Suspense>}
         {cookies && <Cookies onDone={cerrarCookies} />}
         <main id="contenido" tabIndex={-1} className="flex-1 focus:outline-none">
           {activeView === 'home' && <Home clinic={clinic} />}
           {activeView === 'pay' && <Pay />}
+          {activeView === 'liga' && (
+            <div className={`${container} py-8 lg:py-12`}>
+              <Back />
+              <h1 className="mt-4 t-greeting font-head text-titulo">Paga tu cita</h1>
+              {esApi && orq.estado !== 'sin_conexion'
+                ? <Suspense fallback={<p role="status" className="mt-8 t-body text-secundario">Cargando…</p>}><PagoApi referencia={refPago} /></Suspense>
+                : <p className="mt-4 max-w-xl t-body">No pudimos consultar el pago {refPago}: el portal no está conectado al sistema de citas. Inténtalo más tarde.</p>}
+            </div>
+          )}
           {activeView === 'tramites' && <Tramites />}
           {activeView === 'resultados' && <Resultados />}
           {activeView === 'agendar' && <Agendar />}
@@ -226,8 +287,8 @@ export default function App() {
         {sheet && <ClinicSheet current={clinic} onSelect={setClinic} onClose={() => setSheet(false)} />}
         {porVerificar && (
           <VerificarCelular telefono={porVerificar.telefono} pedirCodigo={orq.pedirCodigo} confirmarCodigo={orq.confirmarCodigo}
-            onVerificado={() => { const t = porVerificar.t; setPorVerificar(null); empujar(t) }}
-            onCancelar={() => { setPorVerificar(null); toast('Tu cita quedó guardada en este dispositivo. Confirma tu celular para verla también en WhatsApp.') }} />
+            onVerificado={() => { const t = porVerificar.t; setPorVerificar(null); if (t) empujar(t); else toast('Celular confirmado') }}
+            onCancelar={() => { if (porVerificar.t) toast('Tu cita quedó guardada en este dispositivo. Confirma tu celular para verla también en WhatsApp.'); setPorVerificar(null) }} />
         )}
         {toastEl}
       </div>
