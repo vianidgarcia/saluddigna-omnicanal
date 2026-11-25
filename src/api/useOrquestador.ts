@@ -42,6 +42,8 @@ export type Orquestador = {
   /** Último aviso para mostrar en un toast (null si no hay). */
   aviso: string | null
   limpiarAviso: () => void
+  /** Guarda en la base el avance de un paso (para seguirlo en cualquier canal). */
+  guardarPaso: (t: Tramite) => Promise<void>
   /** Manda el trámite confirmado a la base. Devuelve si falta verificar el celular. */
   confirmar: (t: Tramite) => Promise<Pendiente>
   pedirCodigo: (telefono10: string) => Promise<ModoOtp>
@@ -87,7 +89,8 @@ export function useOrquestador(
     console.warn('[orquestador]', e)
   }, [])
 
-  const aplicar = useCallback((ctx: Contexto) => {
+  /** `fundir`: traer al portal lo que cambió en el trámite. No para lo hecho aquí mismo: regresaría lo que se está editando. */
+  const aplicar = useCallback((ctx: Contexto, fundir = true) => {
     setContexto(ctx)
     setVerificado(ctx.sesion.nivel_verificacion === 'verificada')
     const folios = new Set([...(ctx.citas_proximas ?? []), ...ctx.tramites_abiertos].map((x) => x.folio ?? ''))
@@ -103,7 +106,8 @@ export function useOrquestador(
       const t = confirmarDesdeCita(local, cita)
       if (t) alCambiar.current(t)
     } else if (remoto && esMismoTramite(local, remoto)) {
-      alCambiar.current(fusionarDesdeApi(local, remoto))
+      // empezado aquí sin guardar y con el mismo estudio abierto en otro canal: lo resuelve guardarPaso
+      if (fundir) alCambiar.current(fusionarDesdeApi(local, remoto))
     } else if (antes?.paciente === ctx.paciente.id && antes.folios.has(local.id) && !folios.has(local.id)) {
       // la base ya no lo tiene: se canceló, venció o se atendió
       alCambiar.current(null)
@@ -157,26 +161,66 @@ export function useOrquestador(
         const detalle = e.tipo === 'evento' ? detalleEvento(e.evento.tipo_evento) : 'Mensaje nuevo en la conversación'
         alCambiar.current(conEvento(local, e.tipo === 'evento' ? e.evento.tipo_evento : 'canal.mensaje_recibido', detalle, canal))
       }
+      fundir ||= ajeno
       window.clearTimeout(espera)
-      espera = window.setTimeout(() => {
-        void cargar().then((orq) => orq.sincronizar()).then((ctx) => { if (vivo) aplicar(ctx) })
-          .catch(() => { /* el evento siguiente lo recupera */ })
-      }, 400)
+      espera = window.setTimeout(traer, 400)
     }
+    let fundir = false
+    function traer() {
+      const f = fundir
+      fundir = false
+      if (enviandoRef.current) return
+      void cargar().then((orq) => orq.sincronizar()).then((ctx) => { if (vivo && !enviandoRef.current) aplicar(ctx, f) })
+        .catch(() => { /* el evento siguiente lo recupera */ })
+    }
+    // al volver de WhatsApp el navegador pudo dormir la conexión: se pregunta de nuevo
+    const alVolver = () => { if (document.visibilityState === 'visible') traer() }
+    document.addEventListener('visibilitychange', alVolver)
 
     void cargar().then((orq) => orq.escuchar(alLlegar))
       .then((dejar) => { if (vivo) dejarDeEscuchar = dejar; else dejar() })
       .catch(() => { /* sin tiempo real: se sincroniza con cada acción */ })
 
-    return () => { vivo = false; window.clearTimeout(espera); dejarDeEscuchar?.() }
+    return () => { vivo = false; window.clearTimeout(espera); document.removeEventListener('visibilitychange', alVolver); dejarDeEscuchar?.() }
   }, [aplicar, tramiteRef, pacienteId])
 
-  /* ---- confirmar: aquí se crea todo en la base ---- */
+  /* ---- cada paso terminado se guarda en la base. En fila: dos a la vez chocarían de versión ---- */
+  const fila = useRef<Promise<unknown>>(Promise.resolve())
+  const datosDe = (t: Tramite) => ({ folio: t.id, estudio: t.estudio?.nombre ?? '', clinica: t.clinica, fecha: t.fecha, hora: t.hora, beneficiario: t.beneficiario?.id })
+  const guardarPaso = useCallback((t: Tramite): Promise<void> => {
+    const tarea = fila.current.then(async () => {
+      const orq = await cargar()
+      if (!esApi || !t.estudio || !orq.estadoEnlace().verificado || orq.estadoEnlace().faltaRegistro.length) return
+      enviandoRef.current = true
+      try {
+        // el folio pudo cambiar mientras esperaba su turno
+        const folio = tramiteRef.current?.id ?? t.id
+        const { tramite: remoto, adoptado } = await orq.espejar({ ...datosDe(t), folio }, true)
+        const vivo = tramiteRef.current
+        if (vivo && vivo.id === folio) {
+          if (adoptado) {
+            alCambiar.current(fusionarDesdeApi(vivo, remoto))
+            setAviso(`Ya tenías este estudio pendiente (folio ${remoto.folio}): continúa donde te quedaste.`)
+          } else if (vivo.id !== remoto.folio) alCambiar.current({ ...vivo, id: remoto.folio })
+        }
+        aplicar(await orq.sincronizar(), false)
+      } catch (e) {
+        avisar(e, 'No se pudo guardar este paso en el sistema; quedó en este dispositivo.')
+      } finally {
+        enviandoRef.current = false
+      }
+    })
+    fila.current = tarea
+    return tarea
+  }, [aplicar, avisar, tramiteRef])
+
+  /* ---- confirmar: aquí se completa lo que falte en la base ---- */
   const confirmar = useCallback(async (t: Tramite): Promise<Pendiente> => {
     if (!esApi) return { necesitaOtp: false }
     const telefono = t.paciente.telefono ?? ''
-    enviandoRef.current = true
     setEnviando(true)
+    await fila.current
+    enviandoRef.current = true
     try {
       const orq = await cargar()
       if (estado !== 'listo') aplicar(await orq.arrancar())
@@ -189,17 +233,11 @@ export function useOrquestador(
       // que falle el consentimiento de avisos no debe impedir la cita
       if (t.avisos) await orq.consentirAvisos().catch((e: unknown) => console.warn('[orquestador] avisos', e))
 
-      // 3. el trámite con su estudio y su clínica
-      await orq.crearTramiteCompleto({ estudio: t.estudio?.nombre ?? '', clinica: t.clinica, beneficiario: t.beneficiario?.id })
+      // 3. estudio, clínica y horario: lo que los pasos no alcanzaron a guardar o se corrigió en el resumen
+      const { tramite: remoto } = await orq.espejar({ ...datosDe(t), folio: tramiteRef.current?.id ?? t.id }, false)
+      if (tramiteRef.current && tramiteRef.current.id !== remoto.folio) alCambiar.current({ ...tramiteRef.current, id: remoto.folio })
 
-      // 4. el horario (hay que pedir la lista: de ahí sale el fecha_hora exacto de la clínica)
-      //    Si el trámite ya existía y ya tiene su cita, se conserva: no se vuelve a reservar.
-      if (t.clinica && t.fecha && t.hora && !orq.tramiteRemoto()?.contexto?.cita_id) {
-        await orq.horarios(t.clinica, t.estudio?.nombre ?? '', t.fecha)
-        await orq.reservar(t.fecha, t.hora)
-      }
-
-      // 5. el pago lo genera la base, salvo el pago en clínica (se cobra en mostrador)
+      // 4. el pago lo genera la base, salvo el pago en clínica (se cobra en mostrador)
       if (t.metodoPago && t.metodoPago !== 'en_clinica' && !orq.tramiteRemoto()?.contexto?.pago_id) await orq.pago()
 
       aplicar(await orq.sincronizar())
@@ -216,7 +254,7 @@ export function useOrquestador(
       enviandoRef.current = false
       setEnviando(false)
     }
-  }, [aplicar, avisar, estado])
+  }, [aplicar, avisar, estado, tramiteRef])
 
   const pedirCodigo = useCallback(async (tel: string) => (await cargar()).pedirCodigo(tel), [])
 
@@ -242,7 +280,7 @@ export function useOrquestador(
   return {
     modo: MODO, estado, verificado, aviso,
     limpiarAviso: () => setAviso(null),
-    confirmar, pedirCodigo, confirmarCodigo, horarios, horariosRango, estudiosDisponibles, reiniciar,
+    confirmar, guardarPaso, pedirCodigo, confirmarCodigo, horarios, horariosRango, estudiosDisponibles, reiniciar,
     contexto, aplicar, enviando,
   }
 }

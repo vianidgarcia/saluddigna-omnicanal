@@ -1,0 +1,9 @@
+# Con la CLI de Vercel este archivo sustituye a .gitignore: aquí se repite todo lo que nunca debe subirse.
+node_modules
+dist
+.env
+.env.*
+CREDENCIALES*.md
+*.log
+modulos
+docs

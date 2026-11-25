@@ -20,14 +20,14 @@ import {
   ErrorApi, agregarBeneficiario, asegurarSesionAnonima, avanzarTramite, cerrarInteraccion, confirmarOtpTelefono,
   generarPago, guardarDatosPaciente, horariosDisponibles, iniciarSesionPaciente, iniciarTramite,
   misBeneficiarios, nuevaSesionAnonima, registrarConsentimientoAvisos, obtenerContexto, pedirOtpTelefono, reservarCita, retomarTramite, suscribirPaciente,
-  type Beneficiario, type Cliente, type Contexto, type Relacion, type EventoPaciente, type Horario, type ModoOtp, type Pago,
+  type Beneficiario, type Cliente, type Paso, type Contexto, type Relacion, type EventoPaciente, type Horario, type ModoOtp, type Pago,
   type Tramite as TramiteApi,
 } from './api'
 import { cliente } from './cliente'
 import { cancelarCita, pagarDemo, pagosPendientes, rangoHorarios, reprogramarCita, type Cita, type PagoPorPagar } from './citas'
 import { canalPropio } from './modo'
 import { directorioCompleto, idClinica, idEstudio, listaEstudios, olvidarCatalogos } from './catalogo'
-import { aE164, emparejarEstudio, fechaHoraDeHorarios, partirNombre } from './mapa'
+import { aE164, emparejarEstudio, fechaHoraDeHorarios, partirFechaHora, partirNombre, zonaDe } from './mapa'
 
 // se reexportan para que las vistas no tengan que saber en qué archivo viven
 export { aE164, partirNombre }
@@ -182,6 +182,61 @@ export async function crearTramiteCompleto(datos: { estudio: string; clinica: st
     enlace.remoto = t
   }
   return t
+}
+
+/**
+ * Deja el trámite de la base igual que el del portal, desde el paso en que esté: lo crea, lo corrige o lo adelanta.
+ * `adoptado`: ya había uno abierto de ese estudio (p. ej. en WhatsApp); con `respetar` no se toca y se continúa ese.
+ */
+export async function espejar(d: { folio: string; estudio: string; clinica: string | null; fecha: string | null; hora: string | null; beneficiario?: string | null }, respetar: boolean): Promise<{ tramite: TramiteApi; adoptado: boolean }> {
+  const c = exigirCliente()
+  const i = exigirInteraccion()
+  const estudioId = await idEstudio(c, d.estudio)
+  if (!estudioId) throw new Error(`“${d.estudio}” todavía no se puede agendar en el sistema de citas.`)
+  const ctx = await sincronizar()
+  const abierto = ctx.tramites_abiertos.find((x) => x.folio === d.folio)
+  let t: TramiteApi
+  if (abierto) {
+    t = ctx.tramite_activo?.id === abierto.id ? ctx.tramite_activo : await retomarTramite(c, i, abierto.id)
+  } else {
+    try {
+      t = await iniciarTramite(c, i, estudioId, d.beneficiario)
+    } catch (e) {
+      if (!(e instanceof ErrorApi && e.code === 'PT409' && e.message === 'tramite_duplicado')) throw e
+      t = await retomarAbierto(c, i, e.detalle.folio, e)
+      enlace.remoto = t
+      if (respetar) return { tramite: t, adoptado: true }
+    }
+  }
+  enlace.remoto = t
+  const mover = async (paso: Paso, datos: Parameters<typeof avanzarTramite>[4]) => {
+    t = await conReintento(() => avanzarTramite(c, i, exigirRemoto(), paso, datos))
+    enlace.remoto = t
+  }
+  const para = d.beneficiario ?? ctx.paciente.id
+  let cambio = false
+  if (t.paso_actual === 'seleccion_estudio' || (t.estudio?.id ?? t.contexto.estudio_id) !== estudioId || (t.beneficiario && t.beneficiario.id !== para)) {
+    await mover('seleccion_clinica', { estudio_id: estudioId, beneficiario_id: para })
+    cambio = true
+  }
+  if (d.clinica) {
+    const clinicaId = await idClinica(c, estudioId, d.clinica)
+    if (!clinicaId) throw new Error(`“${d.clinica}” no ofrece este estudio en el sistema de citas.`)
+    const otra = (t.clinica?.id ?? t.contexto.clinica_id) !== clinicaId
+    if (cambio || otra || t.paso_actual === 'seleccion_clinica') {
+      await mover('seleccion_horario', { clinica_id: clinicaId })
+      cambio ||= otra
+    }
+    if (d.fecha && d.hora) {
+      const actual = t.contexto.fecha_hora ? partirFechaHora(t.contexto.fecha_hora, zonaDe(d.clinica)) : null
+      // tras cambiar estudio o clínica la cita anterior ya no vale aunque siga en el contexto
+      if (cambio || !t.contexto.cita_id || t.paso_actual !== 'pago' || actual?.[0] !== d.fecha || actual[1] !== d.hora) {
+        await horarios(d.clinica, d.estudio, d.fecha, 1)
+        t = await reservar(d.fecha, d.hora)
+      }
+    }
+  }
+  return { tramite: t, adoptado: false }
 }
 
 /** De los nombres de estudio del portal, los que la base tiene (el resto no se puede agendar en modo api). */

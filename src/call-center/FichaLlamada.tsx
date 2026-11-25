@@ -39,7 +39,8 @@ export default function FichaLlamada({ inicial, sugerido, borrador, telefono, ve
   const faltaNombre = faltan.some((x) => x !== 'celular_verificado')
   const faltaCelular = faltan.includes('celular_verificado')
   const pacienteId = ctx.paciente.id
-  const puedeAbrir = nivel === 'verificada' && !faltaNombre && !faltaCelular
+  // por teléfono basta la verificación parcial (fecha de nacimiento): así lo decide la base
+  const puedeAbrir = nivel !== 'declarada' && !faltaNombre && !faltaCelular
 
   const recargar = useCallback(async () => setCtx(await api.contexto(i)), [i])
   /** Toda acción recarga el expediente al final, también si falla: otro canal pudo moverlo. */
@@ -75,7 +76,7 @@ export default function FichaLlamada({ inicial, sugerido, borrador, telefono, ve
   }, [verificadas, recargar])
 
   const recargarFamilia = useCallback(async () => { setFamilia(await api.familia(i)) }, [i])
-  useEffect(() => { if (nivel === 'verificada') void recargarFamilia().catch(() => {}) }, [nivel, recargarFamilia])
+  useEffect(() => { if (nivel !== 'declarada') void recargarFamilia().catch(() => {}) }, [nivel, recargarFamilia])
 
   const validar = () => hacer(async () => {
     const r = await api.confirmarOtp(i, codigo)

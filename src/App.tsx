@@ -113,11 +113,12 @@ export default function App() {
   const commit = (t: Tramite | null) => {
     const antes = tRef.current
     guardar(t)
-    // El trámite se crea en la base cuando el paciente confirma: antes de eso no hay datos
-    // suficientes (la base exige nombre, apellido y celular verificado).
+    // Con el celular verificado cada paso terminado se guarda en la base (así se sigue en WhatsApp);
+    // al confirmar se completa lo que falte y se genera el pago.
     if (!esApi || !t) return
     const cerrado = t.estado === 'confirmada' || t.estado === 'pago_pendiente'
     if (cerrado && antes?.estado !== t.estado) empujar(t)
+    else if (t.estado === 'en_curso' && antes?.id === t.id && t.paso > antes.paso) void orq.guardarPaso(t)
   }
   const retomarApi = async (id: string) => {
     const m = await import('./api/orquestador')

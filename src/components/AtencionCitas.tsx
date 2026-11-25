@@ -9,6 +9,7 @@ import { partirFechaHora, zonaDe } from '../api/mapa'
 import * as p from '../api/personal'
 import { fechaLarga, fmtHora, fmtTelefono } from '../state/tramite'
 import { CambiarFecha } from './CitasApi'
+import { CitaTelefono } from './CitaTelefono'
 import { Icon } from './Icon'
 import { apagado, avisoDe, link, outlineBtn } from './ui'
 
@@ -76,7 +77,7 @@ export default function AtencionCitas({ canal, clinicaId }: { canal: 'call_cente
   return (
     <section aria-labelledby={`${id}-t`} className="mt-10 max-w-3xl">
       <h2 id={`${id}-t`} className="t-section font-head text-titulo">{canal === 'clinica' ? 'Mostrador' : 'Atención por teléfono'}</h2>
-      <p className="mt-1 t-body">Busca por celular, elige la cita y después verifica la identidad. Antes de verificar solo se ven folio, fecha y estado.</p>
+      <p className="mt-1 t-body">{canal === 'call_center' ? 'Busca por celular y verifica la identidad para agendar una cita o atender las que ya tiene.' : 'Busca por celular, elige la cita y después verifica la identidad.'} Antes de verificar solo se ven folio, fecha y estado.</p>
 
       {!ctx && (
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -121,7 +122,7 @@ export default function AtencionCitas({ canal, clinicaId }: { canal: 'call_cente
                     <p className="t-body text-titulo"><strong className="font-bold">Folio {t.folio}</strong>{t.etiqueta && ` · ${t.etiqueta}`} · {t.paso_descripcion ?? t.paso_actual.replace(/_/g, ' ')}
                       {t.en_atencion_de_otro && <span className="block t-meta font-semibold text-ambar-texto">Lo atiende otra persona</span>}
                       {t.atendido_por_mi && <span className="block t-meta font-semibold text-enlace">Lo estás atendiendo: los demás canales no pueden cambiarlo</span>}</p>
-                    {nivel === 'verificada' && !t.atendido_por_mi && (
+                    {(nivel === 'verificada' || (nivel === 'canal' && canal === 'call_center')) && !t.atendido_por_mi && (
                       <button disabled={ocupado || t.en_atencion_de_otro} onClick={() => hacer(async () => { await p.tomar(i, t.id); return 'Trámite tomado.' })}
                         aria-label={`Tomar el trámite ${t.folio}`} className={`${outlineBtn} ${apagado} shrink-0`}>Tomar trámite</button>
                     )}
@@ -142,11 +143,12 @@ export default function AtencionCitas({ canal, clinicaId }: { canal: 'call_cente
                 </div>
               ) : (
                 <div className="mt-2 grid gap-4">
-                  {nivel === 'declarada' && (
+                  {nivel === 'declarada' && !ctx.paciente.tiene_fecha_nacimiento && <p className="t-body">No tiene fecha de nacimiento registrada: se verifica con un código. Llega por WhatsApp al celular registrado.</p>}
+                  {nivel === 'declarada' && ctx.paciente.tiene_fecha_nacimiento && (
                     <div className="grid gap-3 sm:grid-cols-2 sm:items-end">
                       <div><label htmlFor={`${id}-nac`} className="text-base font-semibold text-titulo">Fecha de nacimiento</label>
                         <input id={`${id}-nac`} type="date" value={nacimiento} onChange={(e) => setNacimiento(e.target.value)} className={campo} /></div>
-                      <button disabled={ocupado || !nacimiento} onClick={() => hacer(async () => { const r = await p.verificarNacimiento(i, nacimiento); if (!r.verificado) throw new Error('La fecha no coincide.'); return 'Verificación parcial. Para cambiar citas pide el código.' })} className={`${outlineBtn} ${apagado}`}>Comprobar fecha</button>
+                      <button disabled={ocupado || !nacimiento} onClick={() => hacer(async () => { const r = await p.verificarNacimiento(i, nacimiento); if (!r.verificado) throw new Error('La fecha no coincide.'); return 'Verificación parcial: ya puedes agendar. Para cambiar o cancelar citas pide el código.' })} className={`${outlineBtn} ${apagado}`}>Comprobar fecha</button>
                     </div>
                   )}
                   {!otpA
@@ -161,6 +163,11 @@ export default function AtencionCitas({ canal, clinicaId }: { canal: 'call_cente
                 </div>
               )}
             </div>
+          )}
+
+          {canal === 'call_center' && (
+            <CitaTelefono key={i} i={i} ctx={ctx} telefono={tel} ocupado={ocupado}
+              hacer={(fn, ok) => hacer(async () => { const r = await fn(); return ok ?? (typeof r === 'string' ? r : undefined) })} />
           )}
 
           {nivel === 'verificada' && cita && (

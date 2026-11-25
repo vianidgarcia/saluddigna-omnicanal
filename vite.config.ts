@@ -5,6 +5,8 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(({ mode }) => ({
   base: process.env.FIGMA_PUBLIC_URL ? `${process.env.FIGMA_PUBLIC_URL}/` : '/',
   build: { sourcemap: mode === 'development' ? 'inline' : false },
+  // solo el portal: los módulos de modulos/ tienen sus propias dependencias y no se escanean
+  optimizeDeps: { entries: ['index.html'] },
   plugins: [react(), tailwindcss()],
   server: {
     port: process.env.FIGMA ? Number(process.env.PORT) : 5173,

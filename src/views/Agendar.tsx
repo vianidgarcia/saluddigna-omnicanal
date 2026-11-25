@@ -14,6 +14,7 @@ import {
   type MetodoPago, type Paso, type Tramite, fmtHora } from '../state/tramite'
 
 /* Diferida: solo modo api (familiares y avisos). */
+const Identificarse = lazy(() => import('../components/Identificarse'))
 const DatosApi = lazy(() => import('../components/DatosApi'))
 
 const PREGUNTA: Record<Paso, string> = {
@@ -26,9 +27,38 @@ const optionRow = 'flex min-h-14 cursor-pointer items-start gap-3 rounded-lg bor
 const radio = 'mt-0.5 size-5 shrink-0 accent-accion-hover'
 
 export function Agendar() {
-  const { tramite } = useApp()
+  const { tramite, contextoApi: ctx, enlaceApi, update } = useApp()
+  // folio para el que el paciente eligió empezar otra cita en vez de continuar un pendiente
+  const [nuevo, setNuevo] = useState<string | null>(null)
+  const registrado = ctx?.sesion.nivel_verificacion === 'verificada' && !ctx.sesion.requiere_registro?.length
+  const nombre = registrado ? ctx.paciente.nombre ?? null : null
+  // ya identificado: nombre y celular no se vuelven a pedir
+  const incompleto = !!tramite && (!tramite.paciente.nombre || !tramite.paciente.telefono)
+  useEffect(() => {
+    if (!registrado || !incompleto) return
+    let vivo = true
+    void import('../api/orquestador').then((m) => m.telefonoDeSesion()).then((tel) => {
+      if (vivo && (nombre || tel)) update((x) => ({ ...x, paciente: { nombre: x.paciente.nombre || nombre, telefono: x.paciente.telefono || tel } }))
+    }).catch(() => { /* se piden en el paso 4 */ })
+    return () => { vivo = false }
+  }, [registrado, incompleto, nombre]) // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!tramite) return null
   if (tramite.estado === 'confirmada') return <Confirmada t={tramite} />
+  const pendientes = ctx?.tramites_abiertos ?? []
+  const pedirIdentidad = enlaceApi === 'listo' && !!ctx && (!registrado
+    || (tramite.paso === 1 && nuevo !== tramite.id && pendientes.length > 0 && !pendientes.some((x) => x.folio === tramite.id)))
+  if (enlaceApi === 'conectando' || pedirIdentidad) {
+    return (
+      <div className={`${container} py-4 lg:py-12`}>
+        <Back />
+        <h1 className="mb-6 mt-2 t-section font-head text-titulo lg:mt-4">Agendar cita</h1>
+        <Suspense fallback={<p role="status" className="t-body text-secundario">Cargando…</p>}>
+          {pedirIdentidad ? <Identificarse onListo={(otra) => { if (otra) setNuevo(tramite.id) }} /> : <p role="status" className="t-body text-secundario">Conectando…</p>}
+        </Suspense>
+      </div>
+    )
+  }
   return <Flujo t={tramite} />
 }
 

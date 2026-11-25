@@ -1,0 +1,24 @@
+# Servidor de llamadas (WebSocket) en Render: New > Blueprint y elegir este repositorio.
+# sync: false = Render pide el valor en su panel; aquí nunca va ninguna clave secreta.
+services:
+  - type: web
+    name: saluddigna-call-center
+    runtime: node
+    plan: free
+    rootDir: modulos/call-center/server
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: SUPABASE_URL
+        value: https://bdkjkmynxaphqcnapmjk.supabase.co
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false

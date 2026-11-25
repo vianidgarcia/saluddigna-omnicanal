@@ -8,13 +8,14 @@
  * `rolBase` y `clinicaId` van en la sesión: la vista del personal muestra a cada cuenta solo lo suyo.
  */
 import {
-  agendaClinica, bandejaAtencion, buscarPacientes, cerrarInteraccion, cerrarSesion, enviarOtp,
+  agendaClinica, bandejaAtencion, buscarPacientes, cerrarInteraccion, cerrarSesion,
   iniciarContacto, iniciarSesionPersonal, journeyPaciente, obtenerContexto, registrarLlegada, retomarTramite,
   validarOtp, verificarIdentidad, verificarIdentificacion, metricas, suscribirJourneyGlobal, tramitesEnCurso,
   type Bandeja, type CategoriaBandeja, type Clinica, type Contexto, type EventoEnVivo, type Horario, type Journey,
   type Metricas, type PacienteEncontrado, type TipoDocumento, type TramiteEnCurso,
 } from './api'
 import { directorioCompleto } from './catalogo'
+import { enviarCodigo } from './codigo'
 import { cancelarCita, cobrarEnCaja, marcarAtendida, rangoHorarios, reprogramarCita, type Cita } from './citas'
 import { clientePersonal, esApi } from './cliente'
 import type { Rol } from '../state/sesion'
@@ -89,7 +90,7 @@ export const terminar = (i: string) => cerrarInteraccion(exigir(), i)
 export const tomar = (i: string, tramite: string) => retomarTramite(exigir(), i, tramite)
 export const verificarDocumento = (i: string, tipo: TipoDocumento) => verificarIdentificacion(exigir(), i, tipo)
 export const verificarNacimiento = (i: string, fecha: string) => verificarIdentidad(exigir(), i, fecha)
-export const mandarOtp = (i: string) => enviarOtp(exigir(), i)
+export const mandarOtp = (i: string) => enviarCodigo(exigir(), i)
 export const comprobarOtp = (i: string, codigo: string) => validarOtp(exigir(), i, codigo)
 export const cancelar = (i: string, cita: string, motivo: string) => cancelarCita(exigir(), i, cita, motivo)
 export const reprogramar = (i: string, cita: string, fechaHora: string) => reprogramarCita(exigir(), i, cita, fechaHora)

@@ -25,6 +25,12 @@ el enlace completo y lo que falta**; lo imprescindible al tocar código:
 - Pantallas solo de modo api (todas diferidas, arrastran Supabase): paciente `CitasApi`, `PagoApi`, `DatosApi`; personal
   `RecepcionClinica`, `AtencionCitas`, `MetricasApi`. `sesion.rolBase` decide qué ve cada cuenta (asesor, recepcion,
   supervisor, admin); la sesión del personal se cierra a los 30 min sin actividad.
+- Agendar en modo api: `Identificarse` pide celular (OTP) y nombre ANTES del paso 1 y ofrece los pendientes de otros
+  canales; cada paso terminado se guarda con `orq.espejar` (`guardarPaso`). Sin conexión se salta y todo queda local.
+- `WA` (ui.ts): en modo api es el bot del proyecto (+1 555 138 0373); el número real no conoce nuestros trámites.
+- `CitaTelefono` (en `AtencionCitas`, canal call_center): el asesor agenda por teléfono. Basta fecha de nacimiento (`canal`)
+  o código, con nombre y celular verificado alguna vez; usa los pasos de `TramiteLlamada`. Nunca registrar la fecha
+  de nacimiento antes de verificar: serviría para pasar la verificación.
 - Rutas: `/pagar/:referencia` (liga de WhatsApp), `/citas`, `/tramite/:folio`. El hosting debe servir index.html en ellas.
 - Contraseñas y celulares del equipo (`CREDENCIALES*.md`, ignorado por git): nunca en el código ni en la documentación.
 - El modo `local` no debe romperse nunca: es el respaldo si el backend falla en la presentación.

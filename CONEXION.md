@@ -68,12 +68,12 @@ el método de pago y los datos del formulario.
 
 Toda la escritura pasa por `commit` en `App.tsx`. Ese es el único punto de enganche.
 
-### Por qué el trámite se crea al final
+### Cuándo se crea el trámite
 
 La base exige **nombre, apellido y celular verificado por OTP** antes de abrir un trámite, para que
-nadie se apropie del historial de otro paciente. El portal pide esos datos hasta el paso 4. Así que
-los pasos 1 a 3 se trabajan en local y al confirmar se manda todo junto: registro, trámite, clínica,
-horario y pago. Si falta verificar el celular, aparece `VerificarCelular` y al terminar se reintenta.
+nadie se apropie del historial de otro paciente. Por eso `Identificarse` los pide antes del paso 1 y cada
+paso terminado se guarda (`guardarPaso` → `espejar`). Al confirmar se completa lo que falte y se genera el pago.
+Sin conexión el portal sigue en local; si aún falta el celular al confirmar, aparece `VerificarCelular`.
 
 ### Peso del arranque
 
@@ -116,8 +116,8 @@ avisa al paciente y el trámite se puede ver pero no cambiar.
 5. ~~Pago.~~ **Resuelto.** En modo api se paga con `pago-demo` (sin cargo) en `PagoApi` y en
    `/pagar/:referencia`. Al publicar, Eduardo registra la URL base para que `link_pago` deje de ser `null`.
    Sin conexión queda la pasarela simulada.
-6. **Cambiar clínica u horario de un trámite ya apartado en la base:** al retomarlo se respeta lo que tenía;
-   para moverlo se usa "Cambiar fecha" en Mis trámites (otra clínica = cancelar y agendar).
+6. ~~Seguimiento entre canales.~~ **Resuelto.** El celular se verifica al inicio y cada paso se guarda en la base
+   (`espejar` crea, corrige o adelanta el trámite), así que se retoma en WhatsApp y al revés.
 7. **Catálogo:** la base publicada tiene 6 estudios; el portal solo ofrece los que coinciden.
 
 ## Llamadas (call center)

@@ -67,7 +67,9 @@ export function TramiteLlamada({ i, t, ctx, telefono, estudios, familia, recarga
     if (x) horarios.current = [...horarios.current, ...x]
     return x
   }, [])
-  const liga = pago?.link_pago ?? (p === 'pago' ? ctx.pagos_pendientes?.find((x) => !x.folio || x.folio === t.folio)?.link_pago : undefined)
+  // la base no da la liga (null) mientras el portal no esté publicado: se arma con la referencia (/pagar/:referencia)
+  const cobro = (pago ?? (p === 'pago' ? ctx.pagos_pendientes?.find((x) => !x.folio || x.folio === t.folio) : undefined)) as { link_pago?: string | null; referencia?: string } | undefined
+  const liga = cobro?.link_pago ?? (cobro?.referencia ? `${location.origin}/pagar/${cobro.referencia}` : undefined)
   const btn = `${outlineBtn} ${apagado}`
   const regreso = (paso: Paso, texto: string) =>
     <button onClick={() => void hacer(() => api.regresar(i, t, paso), `Listo: elige de nuevo (${nombrePaso(paso).toLowerCase()})`)} disabled={ocupado} className={`${link} ${apagado}`}><Icon n="left" />{texto}</button>
@@ -118,7 +120,7 @@ export function TramiteLlamada({ i, t, ctx, telefono, estudios, familia, recarga
                 {liga && <p className="t-body break-all text-titulo">Liga de pago de ejemplo: {liga}</p>}
                 <div className="mt-2 flex flex-wrap items-center gap-3">
                   {!liga && <button onClick={() => void hacer(async () => setPago(await api.pago(i, t)), 'Liga de pago generada')} disabled={ocupado} className={btn}><Icon n="tarjeta" />Generar liga de pago</button>}
-                  {liga && haySimulador && <button onClick={() => void hacer(() => api.pagoSimulado(liga, telefono), 'Pago de ejemplo acreditado')} disabled={ocupado} className={btn}><Icon n="tarjeta" />Simular pago (demo)</button>}
+                  {liga && haySimulador && cobro?.link_pago && <button onClick={() => void hacer(() => api.pagoSimulado(liga, telefono), 'Pago de ejemplo acreditado')} disabled={ocupado} className={btn}><Icon n="tarjeta" />Simular pago (demo)</button>}
                   {regreso('seleccion_horario', 'Cambiar horario')}
                 </div>
               </>

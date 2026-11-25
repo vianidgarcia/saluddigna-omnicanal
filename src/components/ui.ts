@@ -1,4 +1,7 @@
-export const WA = 'https://wa.me/525539566729'
+import { esApi } from '../api/modo'
+
+/** Modo api: el bot del proyecto (el número real no conoce nuestros trámites). Modo local: el de Salud Digna. */
+export const WA = esApi ? 'https://wa.me/15551380373' : 'https://wa.me/525539566729'
 /** Número de prueba de Meta que envía los códigos (solo demostración) */
 export const WA_PRUEBA = 'https://wa.me/15551380373'
 export const NB = ' ' // non-breaking space

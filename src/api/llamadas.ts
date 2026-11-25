@@ -1,11 +1,12 @@
 /* Operaciones del asesor durante una llamada, con SU sesión (clientePersonal). Arrastra Supabase: solo la
    importa call-center/FichaLlamada, que se carga de forma diferida. */
 import {
-  agregarBeneficiario, avanzarTramite, enviarOtp, ErrorApi, generarPago, guardarDatosPaciente, horariosDisponibles, iniciarTramite,
+  agregarBeneficiario, avanzarTramite, ErrorApi, generarPago, guardarDatosPaciente, horariosDisponibles, iniciarTramite,
   leerBandeja, misBeneficiarios, obtenerContexto, pagarSimulado, referenciaDeLink, reservarCita, retomarTramite, suscribirPaciente, validarOtp, verificarIdentidad,
   type Beneficiario, type Contexto, type Horario, type MensajeBandeja, type Paso, type Relacion, type Tramite,
 } from './api'
 import { directorioCompleto, idClinica, idEstudio, listaEstudios } from './catalogo'
+import { enviarCodigo } from './codigo'
 import { cliente, clientePersonal } from './cliente'
 import { fechaHoraDeHorarios, partirNombre } from './mapa'
 
@@ -21,7 +22,7 @@ export async function contexto(i: string): Promise<Contexto> {
   await directorioCompleto(c()).catch(() => {}) // zonas horarias de las clínicas
   return obtenerContexto(c(), i)
 }
-export const pedirOtp = (i: string) => enviarOtp(c(), i)
+export const pedirOtp = (i: string) => enviarCodigo(c(), i)
 export const confirmarOtp = (i: string, codigo: string) => validarOtp(c(), i, codigo)
 export const verificarFecha = (i: string, fecha: string) => verificarIdentidad(c(), i, fecha)
 export const guardarNombre = (i: string, completo: string): Promise<Contexto> => guardarDatosPaciente(c(), i, partirNombre(completo))
